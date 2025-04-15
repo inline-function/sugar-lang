@@ -1,5 +1,5 @@
 /**
- * 本文件定义语义分析完毕的语法树
+ * 本文件定义语义分析完毕的抽象语法树
  * 编写时kt版本 2.1.0
  * 编写时时间   2025.4.13
  * 创建者      语法糖味函子酱(sugared functor)
@@ -63,7 +63,7 @@ data class NameTree(
     override fun toString() = chain.joinToString(".")
 }
 /**
- * 描述一个如果语句
+ * 描述一个如果表达式
  * @property condition 条件表达式
  * @property then 条件为真时
  * @property else 条件为假时
