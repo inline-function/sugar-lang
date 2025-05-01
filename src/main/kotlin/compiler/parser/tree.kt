@@ -8,7 +8,11 @@
  * 创建者      语法糖味函子酱(sugared functor)
  */
 package compiler.parser
-typealias ID = String
+
+
+import tools.ID
+import tools.function
+
 typealias Body = List<StatementTree>
 /**
  * 语法分析阶段的语法树共同父类
@@ -55,9 +59,15 @@ data class FileTree(
 data class NameTree(
     override val line : Int,
     override val column : Int,
-    val chain : List<String>
+    val expression : ExpressionTree?,
+    val name : ID,
 ) : ExpressionTree {
-    override fun toString() = chain.joinToString(".")
+    override fun toString() = function<ExpressionTree,ID> {
+        if (it is NameTree)
+            "${this(it)}.$name"
+        else
+            "($it)"
+    }(this)
 }
 /**
  * 描述一个语句

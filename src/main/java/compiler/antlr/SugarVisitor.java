@@ -71,11 +71,17 @@ public interface SugarVisitor<T> extends ParseTreeVisitor<T> {
 	 */
 	T visitExpr(SugarParser.ExprContext ctx);
 	/**
-	 * Visit a parse tree produced by {@link SugarParser#invoke_}.
+	 * Visit a parse tree produced by {@link SugarParser#if}.
 	 * @param ctx the parse tree
 	 * @return the visitor result
 	 */
-	T visitInvoke_(SugarParser.Invoke_Context ctx);
+	T visitIf(SugarParser.IfContext ctx);
+	/**
+	 * Visit a parse tree produced by {@link SugarParser#invoke}.
+	 * @param ctx the parse tree
+	 * @return the visitor result
+	 */
+	T visitInvoke(SugarParser.InvokeContext ctx);
 	/**
 	 * Visit a parse tree produced by {@link SugarParser#name}.
 	 * @param ctx the parse tree

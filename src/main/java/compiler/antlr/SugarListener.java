@@ -108,15 +108,25 @@ public interface SugarListener extends ParseTreeListener {
 	 */
 	void exitExpr(SugarParser.ExprContext ctx);
 	/**
-	 * Enter a parse tree produced by {@link SugarParser#invoke_}.
+	 * Enter a parse tree produced by {@link SugarParser#if}.
 	 * @param ctx the parse tree
 	 */
-	void enterInvoke_(SugarParser.Invoke_Context ctx);
+	void enterIf(SugarParser.IfContext ctx);
 	/**
-	 * Exit a parse tree produced by {@link SugarParser#invoke_}.
+	 * Exit a parse tree produced by {@link SugarParser#if}.
 	 * @param ctx the parse tree
 	 */
-	void exitInvoke_(SugarParser.Invoke_Context ctx);
+	void exitIf(SugarParser.IfContext ctx);
+	/**
+	 * Enter a parse tree produced by {@link SugarParser#invoke}.
+	 * @param ctx the parse tree
+	 */
+	void enterInvoke(SugarParser.InvokeContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link SugarParser#invoke}.
+	 * @param ctx the parse tree
+	 */
+	void exitInvoke(SugarParser.InvokeContext ctx);
 	/**
 	 * Enter a parse tree produced by {@link SugarParser#name}.
 	 * @param ctx the parse tree

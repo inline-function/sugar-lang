@@ -6,19 +6,23 @@
  */
 package compiler.semantic
 
-import compiler.parser.Body
-import compiler.parser.ID
+import tools.ID
+import tools.function
+import tools.lambda
 
 /**
  * 语义分析阶段的语法树共同父类
  */
-sealed interface Tree
+sealed interface Tree{
+    val parent : Tree?
+}
 /**
  * 语义分析阶段的文件内语法树共同父类
  * @property line 行号
  * @property column 列号
  */
 sealed interface InnerTree : Tree {
+    override val parent : Tree
     val line : Int
     val column : Int
 }
@@ -31,6 +35,8 @@ data class ProjectTree(
     val name : ID,
     val files : List<FileTree>
 ) : Tree {
+    override val parent : Nothing?
+        get() = null
     override fun toString() =
         files.joinToString(
             separator = "\n",
@@ -39,11 +45,12 @@ data class ProjectTree(
 }
 /**
  * 描述一个文件
- * @param name 文件名
+ * @param name 文件 名
  */
 data class FileTree(
     val name : ID,
-    val tops : List<TopTree>
+    val tops : List<TopTree>,
+    override val parent : ProjectTree
 ) : Tree {
     override fun toString() =
         tops.joinToString(
@@ -53,15 +60,32 @@ data class FileTree(
 }
 /**
  * 描述一个名称
- * @property chain 访问链
+ * @property expression 调用者表达式
  */
 data class NameTree(
     override val line : Int,
     override val column : Int,
-    val chain : List<String>
+    val expression : ExpressionTree?,
+    val name : ID,
+    override val parent : InnerTree
 ) : ExpressionTree {
-    override fun toString() = chain.joinToString(".")
+    override fun toString() = function<ExpressionTree,ID> {
+        if (it is NameTree)
+            "${this(it)}.$name"
+        else
+            "($it)"
+    }(this)
 }
+/**
+ * 描述一个词法作用域
+ * @property stmts 作用域内的语句
+ */
+data class BlockTree(
+    val stmts : List<StatementTree>,
+    override val parent : InnerTree,
+    override val line : Int,
+    override val column : Int,
+) : InnerTree
 /**
  * 描述一个如果表达式
  * @property condition 条件表达式
@@ -71,9 +95,10 @@ data class NameTree(
 data class IfTree(
     override val line : Int,
     override val column : Int,
-    val condition : compiler.parser.ExpressionTree,
-    val then : Body,
-    val `else` : Body?
+    val condition : ExpressionTree,
+    val then : BlockTree,
+    val `else` : BlockTree,
+    override val parent : InnerTree,
 ) : ExpressionTree
 /**
  * 描述一个语句
@@ -95,7 +120,8 @@ data class ClassTree(
     override val column : Int,
     override val name : ID,
     val parents : List<TypeTree>,
-    val members : List<CallableTree>
+    val members : List<CallableTree>,
+    override val parent : InnerTree,
 ) : TopTree {
     override fun toString() =
         "$name |> ${parents.joinToString(" |> ")} {\n${members.joinToString("\n")}\n}"
@@ -117,6 +143,7 @@ data class VariableTree(
     override val name : ID,
     val value : ExpressionTree?,
     override val returnType : TypeTree?,
+    override val parent : InnerTree,
 ) : CallableTree {
     override fun toString() =
         "$name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"
@@ -131,13 +158,14 @@ data class FunctionTree(
     override val returnType : TypeTree?,
     override val name : ID,
     override val column : Int,
-    val body : Body?,
-    val parameters : List<VariableTree>
+    val body : BlockTree?,
+    val parameters : List<VariableTree>,
+    override val parent : InnerTree,
 ) : CallableTree {
     override fun toString() =
         ("$name(${parameters.joinToString(",")})")+
                 (returnType?.let{" : $it"} ?: "")+
-                (body?.joinToString(
+                (body?.stmts?.joinToString(
                     prefix = "{\n",
                     postfix = "\n}",
                     separator = "\n"
@@ -158,6 +186,7 @@ data class InvokeTree(
     override val column : Int,
     val invoker : ExpressionTree,
     val arguments : List<ExpressionTree>,
+    override val parent : InnerTree,
 ) : ExpressionTree{
     override fun toString() =
         "($invoker(${arguments.joinToString(",")}))"
@@ -175,7 +204,8 @@ sealed interface FaceConstantTree : ExpressionTree{
 data class StringConstantTree(
     override val line : Int,
     override val column : Int,
-    override val value : String
+    override val value : String,
+    override val parent : InnerTree,
 ) : FaceConstantTree{
     override fun toString() = "\"$value\""
 }
@@ -189,7 +219,8 @@ sealed interface NumberConstantTree : FaceConstantTree
 data class IntegerConstantTree(
     override val line : Int,
     override val column : Int,
-    override val value : Int
+    override val value : Int,
+    override val parent : InnerTree,
 ) : NumberConstantTree{
     override fun toString() = value.toString()
 }
@@ -199,7 +230,8 @@ data class IntegerConstantTree(
 data class DecimalConstantTree(
     override val line : Int,
     override val column : Int,
-    override val value : Double
+    override val value : Double,
+    override val parent : InnerTree,
 ) : NumberConstantTree{
     override fun toString() = value.toString()
 }
@@ -215,6 +247,7 @@ data class CommonTypeTree(
     override val line : Int,
     override val column : Int,
     val name : ID,
+    override val parent : InnerTree,
 ) : TypeTree{
     override fun toString() = name
 }

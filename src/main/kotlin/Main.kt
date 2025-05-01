@@ -1,6 +1,4 @@
 import compiler.antlr.toSugarTree
-import compiler.semantic.File
-import compiler.semantic.Project
 import tools.SideEffect
 import tools.catch
 import tools.finally

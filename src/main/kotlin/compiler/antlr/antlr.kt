@@ -16,7 +16,6 @@ import org.antlr.v4.runtime.ANTLRInputStream
 import org.antlr.v4.runtime.CommonTokenStream
 import compiler.parser.FileTree
 import compiler.parser.FunctionTree
-import compiler.parser.ID
 import compiler.parser.IntegerConstantTree
 import compiler.parser.InvokeTree
 import compiler.parser.NameTree
@@ -24,6 +23,7 @@ import compiler.parser.ProjectTree
 import compiler.parser.StringConstantTree
 import compiler.parser.TypeTree
 import compiler.parser.VariableTree
+import tools.ID
 import tools.input
 
 /**
@@ -133,26 +133,44 @@ fun ClassContext.toSugarTree() = ClassTree(
  */
 fun ExprContext.toSugarTree() : ExpressionTree =(
     number()?.toSugarTree()?:
-    name()  ?.toSugarTree()?:
     expr()  ?.toSugarTree()?:
     StringConstantTree(
         line   = getStart().line,
         column = getStart().charPositionInLine,
         value  = STRING().text.drop(1).dropLast(1)
     )
-).run{ invoke_()?.toSugarTree(this) ?: this }
+).run{
+    invoke()?.toSugarTree(
+        name()?.toSugarTree(this) ?: this
+    ) ?: (name()?.toSugarTree(this) ?: this)
+}
 /**
  * 关于调用树的转换函数
  * @receiver antlr语法树
  * @return 白砂糖语法树
  */
-fun Invoke_Context.toSugarTree(it:ExpressionTree) : ExpressionTree =
+fun InvokeContext.toSugarTree(it:ExpressionTree) : ExpressionTree =
     InvokeTree(
         line = getStart().line,
         column = getStart().charPositionInLine,
         invoker = it,
         arguments = expr().map(ExprContext::toSugarTree)
-    ).run { invoke_()?.toSugarTree(this) ?: this }
+    ).run {
+        invoke()?.toSugarTree(
+            name()?.toSugarTree(this) ?: this
+        ) ?: (name()?.toSugarTree(this) ?: this)
+    }
+fun NameContext.toSugarTree(it:ExpressionTree) : ExpressionTree =
+    NameTree(
+        line = getStart().line,
+        column = getStart().charPositionInLine,
+        name = ID().text,
+        expression = it
+    ).run {
+        invoke()?.toSugarTree(
+            name()?.toSugarTree(this) ?: this
+        ) ?: (name()?.toSugarTree(this) ?: this)
+    }
 /**
  * 关于类型树的转换函数
  * @receiver antlr语法树
@@ -166,11 +184,6 @@ fun TypeContext.toSugarTree() : TypeTree =
             name   = it.text
         )
     }?:type().toSugarTree()
-fun NameContext.toSugarTree() = NameTree(
-    line = getStart().line,
-    column = getStart().charPositionInLine,
-    chain = ID().map{ it.text }
-)
 fun NumberContext.toSugarTree() =
     INT()?.let {
         IntegerConstantTree(

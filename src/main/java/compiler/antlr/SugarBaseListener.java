@@ -137,13 +137,25 @@ public class SugarBaseListener implements SugarListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
-	@Override public void enterInvoke_(SugarParser.Invoke_Context ctx) { }
+	@Override public void enterIf(SugarParser.IfContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
-	@Override public void exitInvoke_(SugarParser.Invoke_Context ctx) { }
+	@Override public void exitIf(SugarParser.IfContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void enterInvoke(SugarParser.InvokeContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitInvoke(SugarParser.InvokeContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *

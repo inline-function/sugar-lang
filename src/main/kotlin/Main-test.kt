@@ -1,3 +1,7 @@
+
+import compiler.semantic.*
+import tools.*
+
 fun main(){
-    1.plus(1)
+
 }
