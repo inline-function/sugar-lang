@@ -18,14 +18,8 @@ import kotlin.reflect.KClass
 annotation class SideEffect
 /**
  * 该注解为类自动生成构建器模板代码
- * @param parent 父构建器
- * @param code 构建器代码
  */
 @Retention(SOURCE)
 @Target(CLASS)
 @DslMarker
-annotation class Builder(
-    val parent : Array<KClass<*>> = [],
-    val name : String = "",
-    val code : String = ""
-)
+annotation class Builder

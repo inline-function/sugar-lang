@@ -133,6 +133,12 @@ fun ClassContext.toSugarTree() = ClassTree(
  */
 fun ExprContext.toSugarTree() : ExpressionTree =(
     number()?.toSugarTree()?:
+    ID()    ?.run { NameTree(
+        line = getStart().line,
+        column = getStart().charPositionInLine,
+        expression = null,
+        name = text
+    ) } ?:
     expr()  ?.toSugarTree()?:
     StringConstantTree(
         line   = getStart().line,

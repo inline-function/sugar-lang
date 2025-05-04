@@ -6,23 +6,18 @@
  */
 package compiler.semantic
 
-import tools.ID
-import tools.function
-import tools.lambda
+import tools.*
 
 /**
  * 语义分析阶段的语法树共同父类
  */
-sealed interface Tree{
-    val parent : Tree?
-}
+sealed interface Tree
 /**
  * 语义分析阶段的文件内语法树共同父类
  * @property line 行号
  * @property column 列号
  */
 sealed interface InnerTree : Tree {
-    override val parent : Tree
     val line : Int
     val column : Int
 }
@@ -31,12 +26,11 @@ sealed interface InnerTree : Tree {
  * @param name 工程名
  * @param files 工程文件
  */
+@Builder
 data class ProjectTree(
     val name : ID,
     val files : List<FileTree>
 ) : Tree {
-    override val parent : Nothing?
-        get() = null
     override fun toString() =
         files.joinToString(
             separator = "\n",
@@ -47,10 +41,10 @@ data class ProjectTree(
  * 描述一个文件
  * @param name 文件 名
  */
+@Builder
 data class FileTree(
     val name : ID,
     val tops : List<TopTree>,
-    override val parent : ProjectTree
 ) : Tree {
     override fun toString() =
         tops.joinToString(
@@ -62,12 +56,13 @@ data class FileTree(
  * 描述一个名称
  * @property expression 调用者表达式
  */
+@Builder
 data class NameTree(
     override val line : Int,
     override val column : Int,
     val expression : ExpressionTree?,
     val name : ID,
-    override val parent : InnerTree
+    override val type : TypeTree,
 ) : ExpressionTree {
     override fun toString() = function<ExpressionTree,ID> {
         if (it is NameTree)
@@ -80,26 +75,12 @@ data class NameTree(
  * 描述一个词法作用域
  * @property stmts 作用域内的语句
  */
+@Builder
 data class BlockTree(
     val stmts : List<StatementTree>,
-    override val parent : InnerTree,
     override val line : Int,
     override val column : Int,
-) : InnerTree
-/**
- * 描述一个如果表达式
- * @property condition 条件表达式
- * @property then 条件为真时
- * @property else 条件为假时
- */
-data class IfTree(
-    override val line : Int,
-    override val column : Int,
-    val condition : ExpressionTree,
-    val then : BlockTree,
-    val `else` : BlockTree,
-    override val parent : InnerTree,
-) : ExpressionTree
+) : InnerTree,List<StatementTree> by stmts
 /**
  * 描述一个语句
  */
@@ -115,13 +96,13 @@ sealed interface TopTree : StatementTree {
  * 描述一个类,值得一提的是,相比kt的类,它更接近接口
  * @property members 成员
  */
+@Builder
 data class ClassTree(
     override val line : Int,
     override val column : Int,
     override val name : ID,
     val parents : List<TypeTree>,
     val members : List<CallableTree>,
-    override val parent : InnerTree,
 ) : TopTree {
     override fun toString() =
         "$name |> ${parents.joinToString(" |> ")} {\n${members.joinToString("\n")}\n}"
@@ -137,13 +118,13 @@ sealed interface CallableTree : TopTree {
  * 描述一个变量
  * @property value 变量初始值
  */
+@Builder
 data class VariableTree(
     override val line : Int,
     override val column : Int,
     override val name : ID,
     val value : ExpressionTree?,
     override val returnType : TypeTree?,
-    override val parent : InnerTree,
 ) : CallableTree {
     override fun toString() =
         "$name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"
@@ -153,6 +134,7 @@ data class VariableTree(
  * @property parameters 函数参数
  * @property body 函数体
  */
+@Builder
 data class FunctionTree(
     override val line : Int,
     override val returnType : TypeTree?,
@@ -160,7 +142,6 @@ data class FunctionTree(
     override val column : Int,
     val body : BlockTree?,
     val parameters : List<VariableTree>,
-    override val parent : InnerTree,
 ) : CallableTree {
     override fun toString() =
         ("$name(${parameters.joinToString(",")})")+
@@ -175,18 +156,21 @@ data class FunctionTree(
  * 描述一个表达式
  * @property type 表达式类型
  */
-sealed interface ExpressionTree : StatementTree
+sealed interface ExpressionTree : StatementTree{
+    val type : TypeTree
+}
 /**
  * 描述一个赋值语句
  * @property invoker 被调用函数的表达式
  * @property arguments 调用时传入参数
  */
+@Builder
 data class InvokeTree(
     override val line : Int,
     override val column : Int,
     val invoker : ExpressionTree,
     val arguments : List<ExpressionTree>,
-    override val parent : InnerTree,
+    override val type : TypeTree,
 ) : ExpressionTree{
     override fun toString() =
         "($invoker(${arguments.joinToString(",")}))"
@@ -201,11 +185,12 @@ sealed interface FaceConstantTree : ExpressionTree{
 /**
  * 描述一个字符串字面值
  */
+@Builder
 data class StringConstantTree(
     override val line : Int,
     override val column : Int,
     override val value : String,
-    override val parent : InnerTree,
+    override val type : TypeTree,
 ) : FaceConstantTree{
     override fun toString() = "\"$value\""
 }
@@ -216,22 +201,24 @@ sealed interface NumberConstantTree : FaceConstantTree
 /**
  * 描述一个整数字面值
  */
+@Builder
 data class IntegerConstantTree(
     override val line : Int,
     override val column : Int,
     override val value : Int,
-    override val parent : InnerTree,
+    override val type : TypeTree,
 ) : NumberConstantTree{
     override fun toString() = value.toString()
 }
 /**
  * 描述一个小数字面值
  */
+@Builder
 data class DecimalConstantTree(
     override val line : Int,
     override val column : Int,
     override val value : Double,
-    override val parent : InnerTree,
+    override val type : TypeTree,
 ) : NumberConstantTree{
     override fun toString() = value.toString()
 }
@@ -243,11 +230,11 @@ sealed interface TypeTree : InnerTree
  * 描述一个平凡类型
  * @property name 类型名
  */
+@Builder
 data class CommonTypeTree(
     override val line : Int,
     override val column : Int,
     val name : ID,
-    override val parent : InnerTree,
 ) : TypeTree{
     override fun toString() = name
 }

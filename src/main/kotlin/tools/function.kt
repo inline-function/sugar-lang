@@ -38,3 +38,19 @@ operator fun Int.times(s: String) =
 @SideEffect
 inline fun exception(message: String) : Nothing =
     throw Exception(message)
+/**
+ * 省略if
+ * @receiver 条件
+ * @param then 条件为真时的执行体
+ * @return 条件为真时返回then的执行结果，否则返回null
+ */
+inline operator fun <R> Boolean.invoke(then : ()->R) =
+    if (this) then() else null
+/**
+ * 省略if
+ * @receiver 条件
+ * @param then 条件为真时的执行体
+ * @return 条件为真时返回then的执行结果，否则返回else的执行结果
+ */
+inline operator fun <R> Boolean.invoke(then : ()->R,`else` : ()->R) =
+    if (this) then() else `else`()

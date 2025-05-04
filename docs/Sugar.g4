@@ -25,7 +25,6 @@ function : ID '(' (variable (',' variable)*)? ')' (':' type)? body?;
 class : ID ('|>' type)+ '{' (variable|function)* '}';
 type : ID | '(' type ')';
 stmt : expr | top;
-expr : (number | STRING | '(' expr ')' | if) name? invoke?;
-if : IF expr body (ELSE body)?;
+expr : (number | STRING | '(' expr ')' | ID) name? invoke?;
 invoke : '(' (expr (',' expr)*)? ')' name? invoke?;
 name : '.' ID name? invoke?;

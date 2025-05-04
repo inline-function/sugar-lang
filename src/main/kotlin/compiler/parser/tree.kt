@@ -157,19 +157,6 @@ data class InvokeTree(
         "($invoker(${arguments.joinToString(",")}))"
 }
 /**
- * 描述一个如果语句
- * @property condition 条件表达式
- * @property then 条件为真时
- * @property else 条件为假时
- */
-data class IfTree(
-    override val line : Int,
-    override val column : Int,
-    val condition : ExpressionTree,
-    val then : Body,
-    val `else` : Body?
-) : ExpressionTree
-/**
  * 描述一个字面值常量
  * @property value 字面值
  */

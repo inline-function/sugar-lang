@@ -7,7 +7,6 @@
 package compiler.semantic
 
 import tools.*
-import kotlin.time.times
 
 typealias Messages = List<Message>
 typealias MutableMessages = MutableList<Message>
@@ -25,8 +24,7 @@ data class Message(
 /**
  * 语义分析过程中产生的信息
  *
- * ps:该类是信息的只读视图,并非不可变
- * @property sugar      语法糖警告
+ * @property sugar      建议
  * @property tips       提示
  * @property warnings   警告
  * @property errors     错误
@@ -55,95 +53,61 @@ data class Information(
 /**
  * 语义分析过程中用于构建只读信息的可变信息
  *
- * ps:请在构建完毕后确保不会再发生改变
  * @property sugar      建议
  * @property tips       提示
  * @property warnings   警告
  * @property errors     错误
  */
-@Builder(name = "MutInfo")
 data class MutableInformation(
-    var sugar    : MutableMessages,
-    var tips     : MutableMessages,
-    var warnings : MutableMessages,
-    var errors   : MutableMessages,
-){
-    override fun toString() = result.toString()
-}
+    var sugar    : MutableMessages = mutableListOf(),
+    var tips     : MutableMessages = mutableListOf(),
+    var warnings : MutableMessages = mutableListOf(),
+    var errors   : MutableMessages = mutableListOf(),
+)
 val MutableInformation.result : Information
-    get() = Information(sugar, tips, warnings, errors)
-/**
- * 作用域中的符号
- */
+    get() = Information(sugar.toList(), tips.toList(), warnings.toList(), errors.toList())
+
 typealias Symbols<T> = List<T>
 typealias MutableSymbols<T> = MutableList<T>
 
 /**
  * 作用域（只读视图），提供符号、子作用域和父作用域
  *
- * ps:该类是作用域的只读视图,并非不可变
  * @property symbols    符号列表
- * @property children   子作用域列表
  * @property parent     父作用域
  */
 data class Scope<T : Any>(
-    val symbols  : Symbols<T>,
-    val children : List<Scope<*>>,
-    val parent   : Scope<*>?,
-) {
-    override fun toString() =
-        parents.joinToString(
-            separator = ">",
-            prefix = "省略了如上父作用域[",
-            postfix = "]"
-        ) + depth.let { depth ->
-            children.joinToString(
-                prefix = "${depth * standardIndent}{\n",
-                postfix = "${depth * standardIndent}\n}",
-            ) { "${(depth + 1) * standardIndent}$it\n" }
-        }
-}
-
+    val symbols  : Symbols<T> = listOf(),
+    val parent   : Scope<T>? = null,
+) : Symbols<T> by symbols
 /**
  * 可变作用域，用于构建作用域层次结构
  *
- * ps:请在构建完毕后确保不会再发生改变
  * @property symbols    符号列表
- * @property children   子作用域列表
  * @property parent     父作用域
  */
-@Builder(
-    name   = "MutScope",
-    parent = [MutableScope::class],
-    code   = """
-        children += it
-        it.parent = this
-    """
-)
 data class MutableScope<T : Any>(
-    var symbols: MutableSymbols<T>,
-    var children: MutableList<MutableScope<*>>,
-    var parent: MutableScope<*>?,
-) {
-    override fun toString() = result.toString()
-}
-
+    @Suppress("DelegationToVarProperty")
+    var symbols: MutableSymbols<T> = mutableListOf(),
+    var parent: MutableScope<T>? = null,
+) : MutableSymbols<T> by symbols
+@Suppress("RecursivePropertyAccessor")
 val <T : Any> MutableScope<T>.result: Scope<T>
-    get() = Scope(symbols, children.map { it.result }, parent?.result)
+    get() = Scope(symbols.toList(), parent?.result)
 
 operator fun <T : Any> MutableScope<T>.plusAssign(symbol: T) {
     symbols += symbol
 }
 
-val Scope<*>.depth: Int
+val <T : Any> Scope<T>.depth: Int
     get() = generateSequence(this) { it.parent }.count() - 1
 
-val Scope<*>.parents: List<Scope<*>>
+val <T : Any> Scope<T>.parents: List<Scope<T>>
     get() = generateSequence(this) { it.parent }.toList()
 
-/**
- * 解构函数
- */
-operator fun <T : Any> Scope<T>.component1() = symbols
-operator fun <T : Any> Scope<T>.component2() = children
-operator fun <T : Any> Scope<T>.component3() = parent
+val <T : Any> MutableScope<T>.depth: Int
+    get() = generateSequence(this) { it.parent }.count() - 1
+
+val <T : Any> MutableScope<T>.parents: List<MutableScope<T>>
+    get() = generateSequence(this) { it.parent }.toList()
+

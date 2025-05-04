@@ -1,4 +1,5 @@
 import compiler.antlr.toSugarTree
+import compiler.semantic.semanticAnalysis
 import tools.SideEffect
 import tools.catch
 import tools.finally
@@ -28,9 +29,13 @@ inline fun time(times : Int = 1,action : (Int)->Unit){
  */
 @SideEffect
 fun main() = time{
-    val code = """
+    """
         main(){
             print(1)
         }
-    """.trimIndent().toSugarTree() input ::println
+    """
+        .trimIndent()
+        .toSugarTree()
+        .semanticAnalysis()
+        .input(::println)
 }

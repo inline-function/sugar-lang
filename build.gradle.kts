@@ -1,5 +1,7 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
-    id("com.google.devtools.ksp") version "2.1.20-1.0.32"
+    id("com.google.devtools.ksp") version "2.1.20-2.0.1"
     kotlin("jvm") version "2.1.20"
 }
 
@@ -22,4 +24,13 @@ tasks.test {
 }
 kotlin {
     jvmToolchain(17)
+}
+tasks.withType<KotlinCompile>().configureEach {
+    compilerOptions {
+        freeCompilerArgs.addAll(
+            "-opt-in=kotlin.RequiresOptIn",
+            "-Xcontext-parameters",
+            "-Xwhen-guards"
+        )
+    }
 }
