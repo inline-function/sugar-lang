@@ -64,12 +64,10 @@ data class NameTree(
     val name : ID,
     override val type : TypeTree,
 ) : ExpressionTree {
-    override fun toString() = function<ExpressionTree,ID> {
-        if (it is NameTree)
-            "${this(it)}.$name"
-        else
-            "($it)"
-    }(this)
+    override fun toString() : String =
+        if(expression != null)
+            "(${expression}).$name"
+        else name
 }
 /**
  * 描述一个词法作用域
@@ -105,7 +103,7 @@ data class ClassTree(
     val members : List<CallableTree>,
 ) : TopTree {
     override fun toString() =
-        "$name |> ${parents.joinToString(" |> ")} {\n${members.joinToString("\n")}\n}"
+        "class $name${if(parents.isNotEmpty()) "  :" else ""} ${parents.joinToString(",")} {\n${members.joinToString("\n")}\n}"
 }
 /**
  * 可调用的成员,包括变量和函数
@@ -125,9 +123,10 @@ data class VariableTree(
     override val name : ID,
     val value : ExpressionTree?,
     override val returnType : TypeTree?,
+    val isMutable : Boolean
 ) : CallableTree {
     override fun toString() =
-        "$name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"
+        "${if(isMutable) "var" else "val"} $name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"
 }
 /**
  * 描述一个函数
@@ -144,7 +143,7 @@ data class FunctionTree(
     val parameters : List<VariableTree>,
 ) : CallableTree {
     override fun toString() =
-        ("$name(${parameters.joinToString(",")})")+
+        ("fun $name(${parameters.joinToString(",")})")+
                 (returnType?.let{" : $it"} ?: "")+
                 (body?.stmts?.joinToString(
                     prefix = "{\n",
@@ -225,7 +224,9 @@ data class DecimalConstantTree(
 /**
  * 描述一个类型表达式
  */
-sealed interface TypeTree : InnerTree
+sealed interface TypeTree : InnerTree{
+    val name : ID
+}
 /**
  * 描述一个平凡类型
  * @property name 类型名
@@ -234,7 +235,7 @@ sealed interface TypeTree : InnerTree
 data class CommonTypeTree(
     override val line : Int,
     override val column : Int,
-    val name : ID,
+    override val name : ID,
 ) : TypeTree{
     override fun toString() = name
 }

@@ -1,5 +1,13 @@
 
 import compiler.semantic.*
 import tools.*
-fun main(){
+context(s : String)
+fun p() = println(s)
+fun main() {
+    with("1"){
+        with("2"){
+            p()
+        }
+        p()
+    }
 }

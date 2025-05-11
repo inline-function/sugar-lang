@@ -30,12 +30,16 @@ inline fun time(times : Int = 1,action : (Int)->Unit){
 @SideEffect
 fun main() = time{
     """
-        main(){
-            print(1)
-        }
+        |class Int
+        |val i : Int = 0
+        |fun main() {
+        |    val a = i
+        |}
     """
-        .trimIndent()
-        .toSugarTree()
+        .trimMargin()
+        .toSugarTree(showTree = true)
         .semanticAnalysis()
-        .input(::println)
+        .apply {
+            println("语义分析后的抽象语法树:\n$first\n语义分析信息:\n$second")
+        }
 }

@@ -62,12 +62,10 @@ data class NameTree(
     val expression : ExpressionTree?,
     val name : ID,
 ) : ExpressionTree {
-    override fun toString() = function<ExpressionTree,ID> {
-        if (it is NameTree)
-            "${this(it)}.$name"
-        else
-            "($it)"
-    }(this)
+    override fun toString() =
+        if(expression != null)
+            "(${expression}).$name"
+        else name
 }
 /**
  * 描述一个语句
@@ -111,6 +109,7 @@ data class VariableTree(
     override val name : ID,
     val value : ExpressionTree?,
     override val returnType : TypeTree?,
+    val isMutable : Boolean,
 ) : CallableTree {
     override fun toString() =
         "$name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"

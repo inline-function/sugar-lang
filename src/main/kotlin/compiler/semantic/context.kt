@@ -6,6 +6,9 @@
  */
 package compiler.semantic
 
+import compiler.parser.InnerTree
+import compiler.semantic.LexicalScope
+import compiler.semantic.MutableInformation
 import tools.*
 
 typealias Messages = List<Message>
@@ -17,10 +20,18 @@ typealias MutableMessages = MutableList<Message>
  * @property content    消息内容
  */
 data class Message(
-    val line    : Int,
-    val column  : Int,
-    val content : String
-)
+    val content : String,
+    val line    : Int? = null,
+    val column  : Int? = null,
+) {
+    override fun toString() =
+        if(line != null && column != null)
+          "[第${line}行,第${column}列]$content"
+        else content
+}
+fun InnerTree.Message(content : String) = Message(content, line, column)
+fun compiler.semantic.InnerTree.Message(content : String) = Message(content, line, column)
+fun Tag.Message(content : String) = Message(content, line, column)
 /**
  * 语义分析过程中产生的信息
  *
@@ -110,4 +121,3 @@ val <T : Any> MutableScope<T>.depth: Int
 
 val <T : Any> MutableScope<T>.parents: List<MutableScope<T>>
     get() = generateSequence(this) { it.parent }.toList()
-

@@ -32,12 +32,15 @@ import tools.input
  * @return antlr语法树
  */
 @Suppress("DEPRECATION")
-fun String.toAntlrTree() : FileContext = this input
-    ::ANTLRInputStream  input
-    ::SugarLexer        input
-    ::CommonTokenStream input
-    ::SugarParser       input
-    SugarParser::file
+fun String.toAntlrTree(showTree : Boolean = false) : FileContext{
+    val chars = ANTLRInputStream(this)
+    val lexer = SugarLexer(chars)
+    val tokens = CommonTokenStream(lexer)
+    val parser = SugarParser(tokens)
+    val tree = parser.file()
+    if (showTree) println("ANTLR解析的具体语法树 : " + tree.toStringTree(parser))
+    return tree
+}
 /**
  * 将字符串文件转换为只有单文件的语法阶段语法树
  * @param fileName 文件名
@@ -45,8 +48,8 @@ fun String.toAntlrTree() : FileContext = this input
  * @receiver 代码
  * @return 单文件的工程语法树
  */
-fun String.toSugarTree(fileName : ID = "默认",projectName : ID = "默认") =
-    toAntlrTree().run {
+fun String.toSugarTree(showTree : Boolean = false,fileName : ID = "默认",projectName : ID = "默认") =
+    toAntlrTree(showTree).run {
         ProjectTree(
             name  = projectName,
             files = listOf(
@@ -85,7 +88,8 @@ fun VariableContext.toSugarTree() = VariableTree(
     column     = getStart().charPositionInLine,
     name       = ID().text,
     value      = expr()?.toSugarTree(),
-    returnType = type()?.toSugarTree()
+    returnType = type()?.toSugarTree(),
+    isMutable  = VAL()?.let { false } ?: true,
 )
 /**
  * 关于函数树的转换函数
@@ -98,7 +102,20 @@ fun FunctionContext.toSugarTree() = FunctionTree(
     name       = ID().text,
     column     = getStart().charPositionInLine,
     body       = body()?.toSugarTree(),
-    parameters = variable().map(VariableContext::toSugarTree)
+    parameters = parameter().map(ParameterContext::toSugarTree)
+)
+/**
+ * 关于参数树的转换函数
+ * @receiver antlr语法树
+ * @return 白砂糖语法树
+ */
+fun ParameterContext.toSugarTree() = VariableTree(
+    line       = getStart().line,
+    column     = getStart().charPositionInLine,
+    name       = ID().text,
+    value      = expr()?.toSugarTree(),
+    returnType = type().toSugarTree(),
+    isMutable  = false,
 )
 /**
  * 关于函数体的转换函数
