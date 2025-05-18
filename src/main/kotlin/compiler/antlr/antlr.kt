@@ -16,9 +16,12 @@ import org.antlr.v4.runtime.ANTLRInputStream
 import org.antlr.v4.runtime.CommonTokenStream
 import compiler.parser.FileTree
 import compiler.parser.FunctionTree
+import compiler.parser.FunctionTypeTree
 import compiler.parser.IntegerConstantTree
 import compiler.parser.InvokeTree
+import compiler.parser.LambdaTree
 import compiler.parser.NameTree
+import compiler.parser.NullableTypeTree
 import compiler.parser.ProjectTree
 import compiler.parser.StringConstantTree
 import compiler.parser.TypeTree
@@ -97,12 +100,13 @@ fun VariableContext.toSugarTree() = VariableTree(
  * @return 白砂糖语法树
  */
 fun FunctionContext.toSugarTree() = FunctionTree(
-    line       = getStart().line,
-    returnType = type()?.toSugarTree(),
-    name       = ID().text,
-    column     = getStart().charPositionInLine,
-    body       = body()?.toSugarTree(),
-    parameters = parameter().map(ParameterContext::toSugarTree)
+    line           = getStart().line,
+    returnType     = type()?.toSugarTree(),
+    name           = ID().text,
+    column         = getStart().charPositionInLine,
+    body           = body()?.toSugarTree(),
+    parameters     = parameter().map(ParameterContext::toSugarTree),
+    typeParameters = typeParamList()?.ID()?.map { text } ?: emptyList(),
 )
 /**
  * 关于参数树的转换函数
@@ -116,6 +120,17 @@ fun ParameterContext.toSugarTree() = VariableTree(
     value      = expr()?.toSugarTree(),
     returnType = type().toSugarTree(),
     isMutable  = false,
+)
+fun FunctionTypeContext.toSugarTree() = FunctionTypeTree(
+    line       = getStart().line,
+    column     = getStart().charPositionInLine,
+    returnType = type().last().toSugarTree(),
+    parameters = type().dropLast(1).map(TypeContext::toSugarTree)
+)
+fun NullableTypeContext.toSugarTree(it : TypeTree) = NullableTypeTree(
+    line   = getStart().line,
+    column = getStart().charPositionInLine,
+    type   = it
 )
 /**
  * 关于函数体的转换函数
@@ -135,12 +150,13 @@ fun StmtContext.toSugarTree() = top()?.toSugarTree() ?: expr().toSugarTree()
  * @return 白砂糖语法树
  */
 fun ClassContext.toSugarTree() = ClassTree(
-    line    = getStart().line,
-    column  = getStart().charPositionInLine,
-    name    = ID().text,
-    parents = type().map(TypeContext::toSugarTree),
-    members = function().map(FunctionContext::toSugarTree) +
-              variable().map(VariableContext::toSugarTree)
+    line           = getStart().line,
+    column         = getStart().charPositionInLine,
+    name           = ID().text,
+    parents        = type().map(TypeContext::toSugarTree),
+    typeParameters = typeParamList()?.ID()?.map { it.text } ?: emptyList(),
+    members        = function().map(FunctionContext::toSugarTree) +
+                     variable().map(VariableContext::toSugarTree)
 )
 /**
  * 关于表达式树的转换函数
@@ -150,14 +166,14 @@ fun ClassContext.toSugarTree() = ClassTree(
  */
 fun ExprContext.toSugarTree() : ExpressionTree =(
     number()?.toSugarTree()?:
+    expr()  ?.toSugarTree()?:
+    lambda()?.toSugarTree()?:
     ID()    ?.run { NameTree(
         line = getStart().line,
         column = getStart().charPositionInLine,
         expression = null,
         name = text
-    ) } ?:
-    expr()  ?.toSugarTree()?:
-    StringConstantTree(
+    ) } ?: StringConstantTree(
         line   = getStart().line,
         column = getStart().charPositionInLine,
         value  = STRING().text.drop(1).dropLast(1)
@@ -167,6 +183,25 @@ fun ExprContext.toSugarTree() : ExpressionTree =(
         name()?.toSugarTree(this) ?: this
     ) ?: (name()?.toSugarTree(this) ?: this)
 }
+fun LambdaContext.toSugarTree() : LambdaTree =
+    LambdaTree(
+        line = getStart().line,
+        column = getStart().charPositionInLine,
+        parameters = if(parameter().isNotEmpty())
+            parameter().map(ParameterContext::toSugarTree)
+        else
+            ID().map {
+                VariableTree(
+                    line = getStart().line,
+                    column = getStart().charPositionInLine,
+                    name = it.text,
+                    value = null,
+                    returnType = null,
+                    isMutable = false
+                )
+            },
+        body = stmt().map(StmtContext::toSugarTree),
+    )
 /**
  * 关于调用树的转换函数
  * @receiver antlr语法树
@@ -177,7 +212,8 @@ fun InvokeContext.toSugarTree(it:ExpressionTree) : ExpressionTree =
         line = getStart().line,
         column = getStart().charPositionInLine,
         invoker = it,
-        arguments = expr().map(ExprContext::toSugarTree)
+        arguments = expr().map(ExprContext::toSugarTree),
+        typeArguments = typeArgList()?.type()?.map(TypeContext::toSugarTree) ?: emptyList()
     ).run {
         invoke()?.toSugarTree(
             name()?.toSugarTree(this) ?: this
@@ -200,13 +236,16 @@ fun NameContext.toSugarTree(it:ExpressionTree) : ExpressionTree =
  * @return 白砂糖语法树
  */
 fun TypeContext.toSugarTree() : TypeTree =
-    ID()?.let {
+    (ID()?.let {
         CommonTypeTree(
             line   = getStart().line,
             column = getStart().charPositionInLine,
             name   = it.text
         )
-    }?:type().toSugarTree()
+    } ?: functionType()?.toSugarTree()
+    ?:type().toSugarTree()).run {
+        nullableType()?.toSugarTree(this) ?: this
+    }
 fun NumberContext.toSugarTree() =
     INT()?.let {
         IntegerConstantTree(

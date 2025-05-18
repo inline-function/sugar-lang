@@ -54,3 +54,8 @@ inline operator fun <R> Boolean.invoke(then : ()->R) =
  */
 inline operator fun <R> Boolean.invoke(then : ()->R,`else` : ()->R) =
     if (this) then() else `else`()
+@Suppress("UNCHECKED_CAST")
+fun <R> Any?.cast() : R = this as R
+@Suppress("UNCHECKED_CAST")
+fun <R> Any?.safeCast() : R? = this as? R
+inline fun <T> T?.nullThen(block : (T?)->T & Any) : T & Any = this ?: block(this)

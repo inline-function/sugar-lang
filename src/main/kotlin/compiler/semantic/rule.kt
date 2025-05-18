@@ -7,11 +7,19 @@
 @file:Suppress("NestedLambdaShadowedImplicitParameter","NAME_SHADOWING","RedundantModalityModifier")
 
 package compiler.semantic
-import compiler.semantic.LexicalScope
-import compiler.semantic.MutableInformation
+import compiler.semantic.returnType
+import compiler.semantic.type
+import compiler.semantic.value
+import compiler.parser.LambdaTree as LambdaSyntaxTree
+import compiler.parser.ApplyTypeTree as ApplyTypeSyntaxTree
+import compiler.parser.FunctionTypeTree as FunctionTypeSyntaxTree
+import compiler.parser.NullableTypeTree as NullableTypeSyntaxTree
 import compiler.parser.CallableTree as CallableSyntaxTree
 import compiler.parser.TopTree as TopSyntaxTree
 import tools.ID
+import tools.input
+import tools.never
+import java.io.Closeable
 import compiler.parser.StatementTree as StatementSyntaxTree
 import compiler.parser.ExpressionTree as ExpressionSyntaxTree
 import compiler.parser.DecimalConstantTree as DecimalConstantSyntaxTree
@@ -42,47 +50,85 @@ sealed interface Tag{
     val result : TopTree
 }
 fun Tag(it : TopSyntaxTree) = when(it){
-    is ClassSyntaxTree    -> ClassTag(it)
-    is FunctionSyntaxTree -> FunctionTag(it)
-    is VariableSyntaxTree -> VariableTag(it)
+    is ClassSyntaxTree    -> ClassHead(it)
+    is FunctionSyntaxTree -> FunctionHead(it)
+    is VariableSyntaxTree -> VariableHead(it)
 }
 sealed interface CallableTag : Tag{
     context(info : MutableInformation,scope : LexicalScope)
     override val result : CallableTree
+    context(info : MutableInformation,scope : LexicalScope)
+    val type : TypeTree?
 }
-fun CallableTag(it : CallableSyntaxTree) = when(it){
-    is FunctionSyntaxTree -> FunctionTag(it)
-    is VariableSyntaxTree -> VariableTag(it)
+sealed interface HeadTag : Tag{
+    val prototype : TopSyntaxTree
 }
-@JvmInline value class VariableTag(val prototype : VariableSyntaxTree) : CallableTag{
+sealed interface DefTag : Tag{
+    val prototype : TopTree
+}
+sealed interface FunctionTag : CallableTag{
+    val typeParaments : List<ID>
+    val parameters : List<VariableTag>
+    context(info : MutableInformation,scope : LexicalScope)
+    val typeAsVariable : FunctionTypeTree
+}
+sealed interface VariableTag : CallableTag
+sealed interface ClassTag : Tag{
+    val typeParaments : List<ID>
+    context(info : MutableInformation,scope : LexicalScope)
+    val parents : List<TypeTree>
+    val members : List<CallableTag>
+}
+fun CallableTag(it : CallableSyntaxTree) : CallableTag = when(it){
+    is FunctionSyntaxTree -> FunctionHead(it)
+    is VariableSyntaxTree -> VariableHead(it)
+}
+fun CallableTag(it : CallableTree) : CallableTag = when(it){
+    is FunctionTree -> FunctionDef(it)
+    is VariableTree -> VariableDef(it)
+}
+@JvmInline value class VariableHead(override val prototype : VariableSyntaxTree) : VariableTag,HeadTag{
     override val line      : Int             get() = prototype.line
     override val column    : Int             get() = prototype.column
     override val name      : ID              get() = prototype.name
     final    val isMutable : Boolean         get() = prototype.isMutable
     context(info : MutableInformation,scope : LexicalScope)
-    final    val type      : TypeTree?       get() = prototype.returnType?.toAst()
+    override val type      : TypeTree?       get() = prototype.returnType?.toAst()
     context(info : MutableInformation,scope : LexicalScope)
     override val result : VariableTree
-        get() = VariableTree(
-            line       = line,
-            column     = column,
-            name       = name,
-            returnType = type,
-            value      = prototype.value?.toAst(),
-            isMutable  = isMutable
-        ).also {
-            check(it.returnType != null) {
-                no_such_type(it.returnType!!)
+        get() = prototype.value?.toAst(type).let {
+            VariableTree(
+                line       = line,
+                column     = column,
+                name       = name,
+                returnType = type ?: it?.type,
+                value      = it,
+                isMutable  = isMutable
+            ).also {
+                check(it.returnType != null) {
+                    no_such_type(it.returnType!!)
+                    it.value?.type?.apply {
+                        no_such_castable_type(it.returnType,this)
+                    }
+                }
             }
         }
 }
-@JvmInline value class FunctionTag(val prototype : FunctionSyntaxTree) : CallableTag{
-    override val line       : Int               get() = prototype.line
-    override val column     : Int               get() = prototype.column
-    override val name       : ID                get() = prototype.name
+@JvmInline value class FunctionHead(override val prototype : FunctionSyntaxTree) : FunctionTag,HeadTag{
+    override val line   get() = prototype.line
+    override val column get() = prototype.column
+    override val name   get() = prototype.name
     context(info : MutableInformation,scope : LexicalScope)
-    final    val type       : TypeTree?         get() = prototype.returnType?.toAst()
-    final    val parameters : List<VariableTag> get() = prototype.parameters.map(::VariableTag)
+    override val type  get() = prototype.returnType?.toAst() ?: unit
+    override val typeParaments  get() = prototype.typeParameters
+    override val parameters     get() = prototype.parameters.map(::VariableHead)
+    context(info : MutableInformation,scope : LexicalScope)
+    override val typeAsVariable get() = FunctionTypeTree(
+        line       = line,
+        column     = column,
+        parameters = parameters.mapNotNull { it.type },
+        returnType = type
+    )
     context(info : MutableInformation,scope : LexicalScope)
     override val result : FunctionTree
         get() = FunctionTree(
@@ -91,39 +137,136 @@ fun CallableTag(it : CallableSyntaxTree) = when(it){
             name = name,
             column = column,
             body = prototype.body?.let {
-                BlockTree(it.mapNotNull { it.toAst() },line,column)
+                scope.subScope.apply {
+                    typeParaments.map {
+                        ClassSyntaxTree(
+                            line           = line,
+                            column         = column,
+                            name           = it,
+                            typeParameters = emptyList(),
+                            parents        = emptyList(), //TODO(类型参数边界)
+                            members        = emptyList()
+                        ) input ::ClassHead
+                    } input ::addAll
+                }.run {
+                    BlockTree(it.mapNotNull { it.toAst() },line,column)
+                }
             },
-            parameters = parameters.map { it.result }
+            parameters = parameters.map { it.result },
+            typeParameters = typeParaments
         ).also {
-            check(it.returnType != null) {
-                no_such_type(it.returnType!!)
+            check {
+                no_such_type(it.returnType)
             }
         }
 }
-@JvmInline value class ClassTag(val prototype : ClassSyntaxTree) : Tag{
-    override val line    get() = prototype.line
-    override val column  get() = prototype.column
-    override val name    get() = prototype.name
-    final    val parents get() = prototype.parents
-    final    val members get() = prototype.members.map {
-        when(it){
-            is FunctionSyntaxTree -> FunctionTag(it)
-            is VariableSyntaxTree -> VariableTag(it)
-        }
-    }
+@JvmInline value class ClassHead(override val prototype : ClassSyntaxTree) : ClassTag,HeadTag{
+    override val line   get() = prototype.line
+    override val column get() = prototype.column
+    override val name   get() = prototype.name
+    override val typeParaments get() = prototype.typeParameters
+    context(info : MutableInformation,scope : LexicalScope)
+    override val parents       get() = prototype.parents.map { it.toAst() }
+    override val members       get() = prototype.members.map(::CallableTag)
     context(info : MutableInformation,scope : LexicalScope)
     override val result : ClassTree
         get() = ClassTree(
             line    = line,
             column  = column,
             name    = name,
-            parents = parents.map { it.toAst() },
-            members = with(scope.subScope){
-                members.map {
-                    it.result
-                }
+            parents = parents,
+            typeParameters = typeParaments,
+            members = scope.subScope.apply {
+                addAll(
+                    typeParaments.map {
+                        ClassTree(
+                            line           = line,
+                            column         = column,
+                            name           = it,
+                            typeParameters = emptyList(),
+                            parents        = emptyList(), //TODO(类型参数边界)
+                            members        = emptyList()
+                        ) input ::ClassDef
+                    }
+                )
+            }.run {
+                members.map { it.result }
             }
         ).also {
+            it.parents.forEach {
+                check {
+                    no_such_type(it)
+                }
+            }
+        }
+}
+@JvmInline value class VariableDef(override val prototype : VariableTree) : VariableTag,DefTag{
+    context(info : MutableInformation,scope : LexicalScope)
+    override val result : CallableTree
+        get() = prototype.also {
+            check(it.returnType != null) {
+                no_such_type(it.returnType!!)
+                it.value?.type?.apply {
+                    no_such_castable_type(it.returnType,this)
+                }
+            }
+        }
+    override val line : Int
+        get() = prototype.line
+    override val column : Int
+        get() = prototype.column
+    override val name : ID
+        get() = prototype.name
+    context(info : MutableInformation,scope : LexicalScope)
+    override val type : TypeTree?
+        get() = prototype.returnType
+}
+@JvmInline value class FunctionDef(override val prototype : FunctionTree) : FunctionTag,DefTag{
+    context(info : MutableInformation,scope : LexicalScope)
+    override val result : CallableTree
+        get() = prototype.also {
+            check {
+                no_such_type(it.returnType)
+            }
+        }
+    override val line : Int
+        get() = prototype.line
+    override val column : Int
+        get() = prototype.column
+    override val name : ID
+        get() = prototype.name
+    override val parameters : List<VariableTag>
+        get() = prototype.parameters.map(::VariableDef)
+    override val typeParaments : List<ID>
+        get() = prototype.typeParameters
+    context(info : MutableInformation,scope : LexicalScope)
+    override val type : TypeTree?
+        get() = prototype.returnType
+    context(info : MutableInformation,scope : LexicalScope)
+    override val typeAsVariable get() = FunctionTypeTree(
+        line       = line,
+        column     = column,
+        parameters = prototype.parameters.mapNotNull { it.returnType },
+        returnType = prototype.returnType
+    )
+}
+@JvmInline value class ClassDef(override val prototype : ClassTree) : ClassTag,DefTag{
+    override val line : Int
+        get() = prototype.line
+    override val column : Int
+        get() = prototype.column
+    override val members : List<CallableTag>
+        get() = prototype.members.map(::CallableTag)
+    context(info : MutableInformation,scope : LexicalScope)
+    override val parents : List<TypeTree>
+        get() = prototype.parents
+    override val typeParaments : List<ID>
+        get() = prototype.typeParameters
+    override val name : ID
+        get() = prototype.name
+    context(info : MutableInformation,scope : LexicalScope)
+    override val result : TopTree
+        get() = prototype.also {
             it.parents.forEach {
                 check {
                     no_such_type(it)
@@ -139,10 +282,11 @@ inline fun LexicalScope.findSymbol(bool : (Tag)->Boolean) : Tag?{
     }
     return null
 }
-fun LexicalScope.findClassSymbol(name : String) : ClassTag?{
+fun LexicalScope.findClassSymbol(name : ID) : ClassTag?{
     parents.forEach {
         it.symbols.forEach {
-            if (it is ClassTag && it.name == name) return it
+            if (it is ClassTag && it.name == name)
+                return it
         }
     }
     return null
@@ -150,7 +294,7 @@ fun LexicalScope.findClassSymbol(name : String) : ClassTag?{
 fun LexicalScope.findVariableSymbol(name : String) : VariableTag?{
     parents.forEach {
         it.symbols.forEach {
-            if (it is VariableTag && it.name == name) return it
+            if ((it is VariableTag || it is VariableDef) && it.name == name) return it
         }
     }
     return null
@@ -158,7 +302,7 @@ fun LexicalScope.findVariableSymbol(name : String) : VariableTag?{
 fun LexicalScope.findFunctionSymbol(name : String) : FunctionTag?{
     parents.forEach {
         it.symbols.forEach {
-            if (it is FunctionTag && it.name == name) return it
+            if ((it is FunctionTag || it is FunctionDef) && it.name == name) return it
         }
     }
     return null
@@ -167,7 +311,7 @@ inline fun <T> compilation(
     info : MutableInformation,scope : LexicalScope,
     block : context(MutableInformation,LexicalScope) (MutableInformation,LexicalScope)->T
 ) = with(info) { with(scope) { block(info,scope) } }
-fun ProjectSyntaxTree.semanticAnalysis() : SemanticResult =
+fun ProjectSyntaxTree.semanticAnalysis() : SemanticResult=
     compilation(MutableInformation(),rootScope){ info,scope ->
         //创建项目构建器
         val projectBuilder = buildProjectTree(name = name)
@@ -186,17 +330,18 @@ fun ProjectSyntaxTree.semanticAnalysis() : SemanticResult =
             //返回一个匿名函数:遍历文件每一个标签,依次构造它们的抽象语法树,
             //将它们全部添加到文件构建器中后构建文件的抽象语法树
             return@map {
-                fileBuilder.apply {
-                    tops.addAll(
-                        tags.map {
-                            //检查顶层变量是否有类型
-                            check(it is VariableTag) {
-                                root_scope_variable_no_type((it as VariableTag).prototype)
-                            }
-                            it.result
+                tags.map {
+                    //检查顶层变量是否有类型,是否初始化
+                    check(it is VariableHead) {
+                        root_scope_variable_no_type((it as VariableHead).prototype)
+                    }
+                    it.result.apply {
+                        check(this is VariableTree) {
+                            no_such_variable_init(this as VariableTree)
                         }
-                    )
-                }.result
+                    }
+                } input fileBuilder.tops::addAll
+                fileBuilder.result
             }
         }.map { it() }
         //把所有文件的抽象语法树添加为工程构建器
@@ -213,22 +358,95 @@ fun CommonTypeSyntaxTree.toAst() : CommonTypeTree =
     CommonTypeTree(line,column,name)
 context(info : MutableInformation,scope : LexicalScope)
 fun TypeSyntaxTree.toAst() : TypeTree = when(this){
-    is CommonTypeSyntaxTree -> toAst()
+    is CommonTypeSyntaxTree   -> toAst()
+    is ApplyTypeSyntaxTree    -> toAst()
+    is FunctionTypeSyntaxTree -> toAst()
+    is NullableTypeSyntaxTree -> toAst()
 }
+context(info : MutableInformation,scope : LexicalScope)
+fun ApplyTypeSyntaxTree.toAst() = ApplyTypeTree(
+    line      = line,
+    column    = column,
+    name      = name,
+    arguments = arguments.map { it.toAst() }
+)
+context(info : MutableInformation,scope : LexicalScope)
+fun FunctionTypeSyntaxTree.toAst() = FunctionTypeTree(
+    line       = line,
+    column     = column,
+    parameters = parameters.map { it.toAst() },
+    returnType = returnType.toAst()
+)
+context(info : MutableInformation,scope : LexicalScope)
+fun NullableTypeSyntaxTree.toAst() = NullableTypeTree(
+    line       = line,
+    column     = column,
+    type       = type.toAst()
+)
 context(info : MutableInformation,scope : LexicalScope)
 fun StatementSyntaxTree.toAst() : StatementTree? = when(this){
     is ExpressionSyntaxTree -> toAst()
-    is FunctionSyntaxTree   -> FunctionTag(this).result
-    is VariableSyntaxTree   -> VariableTag(this).result
-    is ClassSyntaxTree      -> ClassTag(this).result
+    is FunctionSyntaxTree   -> FunctionHead(this).result.apply { scope.symbols.add(FunctionDef(this)) }
+    is VariableSyntaxTree   -> VariableHead(this).result.apply { no_such_variable_init(this) ; scope.symbols.add(VariableDef(this))  }
+    is ClassSyntaxTree      -> ClassHead(this).result.apply { scope.symbols.add(ClassDef(this)) }
 }
 context(info : MutableInformation,scope : LexicalScope)
-fun ExpressionSyntaxTree.toAst() : ExpressionTree? = when(this){
+fun ExpressionSyntaxTree.toAst(requirementType : TypeTree? = null) : ExpressionTree? = when(this){
     is DecimalConstantSyntaxTree -> toAst()
     is IntegerConstantSyntaxTree -> toAst()
     is StringConstantSyntaxTree  -> toAst()
     is InvokeSyntaxTree          -> toAst()
     is NameSyntaxTree            -> toAst()
+    is LambdaSyntaxTree          -> toAst(requirementType)
+}
+context(info : MutableInformation,scope : LexicalScope)
+fun LambdaSyntaxTree.toAst(
+    requirementType : TypeTree?
+) = scope.subScope.run {
+    buildLambdaTree(
+        line       = line,
+        column     = column,
+        parameters = parameters.map { VariableHead(it).result }.toMutableList(),
+        body       = BlockTree(
+            stmts  = body.mapNotNull { it.toAst() },
+            line   = line,
+            column = column
+        )
+    ) {
+        //判断是否有需求
+        if(requirementType != null){
+            //TODO("需求类型推导未实现")
+            //没有需求类型,检查每一个参数是否声明类型
+            check {
+                no_such_lambda_parameter_type(parameters)
+            }
+            //根据参数类型,附加匿名函数的类型
+            type = FunctionTypeTree(
+                line       = line!!,
+                column     = column!!,
+                parameters = parameters.mapNotNull { it.returnType },
+                returnType = when(val last = body!!.lastOrNull()){
+                    is ExpressionTree -> last.type
+                    else              -> unit
+                }
+            )
+        }else{
+            //没有需求类型,检查每一个参数是否声明类型
+            check {
+                no_such_lambda_parameter_type(parameters)
+            }
+            //根据参数类型,附加匿名函数的类型
+            type = FunctionTypeTree(
+                line       = line!!,
+                column     = column!!,
+                parameters = parameters.mapNotNull { it.returnType },
+                returnType = when(val last = body!!.lastOrNull()){
+                    is ExpressionTree -> last.type
+                    else              -> unit
+                }
+            )
+        }
+    }.result
 }
 context(info : MutableInformation,scope : LexicalScope)
 fun NameSyntaxTree.toAst() : NameTree? =
@@ -253,25 +471,33 @@ fun NameSyntaxTree.toAst() : NameTree? =
                 no_such_member(realType,name!!) { return@toAst null }
             }
             //寻找类定义中名字为name的成员
-            val member = realType.members.find {
-                it.name == name
-            }!!
+            val member = when(realType){
+                is ClassDef  -> realType.prototype.members.find { it.name == name }!!.let(::CallableTag)
+                is ClassHead -> realType.members.find { it.name == name }!!
+            }
             //判断成员标签类型
-            when(member){
+            type = when(member){
                 is FunctionTag -> TODO("暂不支持直接引用函数成员")
-                is VariableTag -> {
-                    type = member.type ?: return@toAst null
-                }
+                is VariableHead -> member.type ?: return@toAst null
+                is VariableDef -> member.prototype.returnType ?: return@toAst null
             }
         } ?: run {
             //检查作用域是否能找到这个名字
             check {
-                no_such_variable(name!!,line!!,column!!)
+                no_such_variable(name!!,line!!,column!!) { return@toAst null }
             }
-            //从作用域获取变量
-            val variable = scope.findVariableSymbol(name!!)
-            //取变量的类型
-            type = variable?.type ?: return@toAst null
+            //从作用域获取变量或者函数
+            type = scope.findVariableSymbol(name!!)?.run {
+                when(this){
+                    is VariableDef  -> prototype.returnType
+                    is VariableHead -> type
+                }!!
+            } ?: scope.findFunctionSymbol(name!!)!!.run {
+                when(this){
+                    is FunctionDef  -> typeAsVariable
+                    is FunctionHead -> typeAsVariable
+                }
+            }
         }
     }.result
 context(info : MutableInformation,scope : LexicalScope)
@@ -289,7 +515,6 @@ fun InvokeSyntaxTree.toAst() : InvokeTree? =
         line = line,
         column = column,
         invoker = invoker.toAst(),
-        arguments = arguments.mapNotNull { it.toAst() }.toMutableList(),
     ) {
         //调用者如果为空则表示下层出现异常,本层无力处理,因此返回null
         invoker ?: return@toAst null
@@ -304,10 +529,31 @@ fun InvokeSyntaxTree.toAst() : InvokeTree? =
             no_invoke_function(invokerType) { return@toAst null }
         }
         //在调用者类型中寻找名为invoke的函数
-        val invokeFunction = invokerType.members.find {
-            it is FunctionTag && it.name == invokeFunctionName
-        } as FunctionTag
-        //
+        val invokeFunction = when(invokerType){
+            is ClassDef  -> invokerType.prototype.members.find {
+                it is FunctionTree && it.name == invokeFunctionName
+            } as FunctionTree input ::FunctionDef
+            is ClassHead -> invokerType.members.find {
+                it is FunctionTag && it.name == invokeFunctionName
+            } as FunctionTag
+        }
+        //invoke表达式的类型就是invoke函数的返回值类型
+        type = invokeFunction returnTypeBeErasedBy invoker!!.type
+        //然后依次提供需求以构造实参
+        arguments = when(invokeFunction){
+            is FunctionDef  -> (this@toAst.arguments zip invokeFunction.prototype.parameters)
+                .mapNotNull { (expr,tag) -> expr.toAst(tag.returnType) }
+            is FunctionHead -> (this@toAst.arguments zip invokeFunction.parameters)
+                .mapNotNull { (expr,tag) -> expr.toAst(tag.type) }
+        }.toMutableList()
+        //判断函数类型是否符合
+        check {
+            (invoker as? NameTree)?.let {
+                scope.findFunctionSymbol(it.name)?.let {
+                    parameter_type_error(it,invoker!!.type,arguments,line!!,column!!) { return@toAst null }
+                }
+            } ?: parameter_type_error(invokeFunction,invoker!!.type,arguments,line!!,column!!) { return@toAst null }
+        }
     }.result
 
 

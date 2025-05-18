@@ -11,7 +11,6 @@ package compiler.parser
 
 
 import tools.ID
-import tools.function
 
 typealias Body = List<StatementTree>
 /**
@@ -86,11 +85,12 @@ data class ClassTree(
     override val line : Int,
     override val column : Int,
     override val name : ID,
+    val typeParameters : List<ID>,
     val parents : List<TypeTree>,
     val members : List<CallableTree>
 ) : TopTree {
     override fun toString() =
-        "$name |> ${parents.joinToString(" |> ")} {\n${members.joinToString("\n")}\n}"
+        "class $name${if(parents.isNotEmpty()) "  :" else ""} ${parents.joinToString(",")} {\n${members.joinToString("\n")}\n}"
 }
 /**
  * 可调用的成员,包括变量和函数
@@ -112,7 +112,7 @@ data class VariableTree(
     val isMutable : Boolean,
 ) : CallableTree {
     override fun toString() =
-        "$name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"
+        "${if(isMutable) "var" else "val"} $name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"
 }
 /**
  * 描述一个函数
@@ -124,23 +124,30 @@ data class FunctionTree(
     override val returnType : TypeTree?,
     override val name : ID,
     override val column : Int,
+    val typeParameters : List<ID>,
     val body : Body?,
     val parameters : List<VariableTree>
 ) : CallableTree {
     override fun toString() =
-        ("$name(${parameters.joinToString(",")})")+
-        (returnType?.let{" : $it"} ?: "")+
-        (body?.joinToString(
-            prefix = "{\n",
-            postfix = "\n}",
-            separator = "\n"
-        )?:"")
+        ("fun $name(${parameters.joinToString(",")})")+
+                (returnType?.let{" : $it"} ?: "")+
+                (body?.joinToString(
+                    prefix = "{\n",
+                    postfix = "\n}",
+                    separator = "\n"
+                )?:"")
 }
 /**
  * 描述一个表达式
  * @property type 表达式类型
  */
 sealed interface ExpressionTree : StatementTree
+data class LambdaTree(
+    override val line : Int,
+    override val column : Int,
+    val parameters : List<VariableTree>,
+    val body : Body,
+) : ExpressionTree
 /**
  * 描述一个赋值语句
  * @property invoker 被调用函数的表达式
@@ -151,6 +158,7 @@ data class InvokeTree(
     override val column : Int,
     val invoker : ExpressionTree,
     val arguments : List<ExpressionTree>,
+    val typeArguments : List<TypeTree>
 ) : ExpressionTree{
     override fun toString() =
         "($invoker(${arguments.joinToString(",")}))"
@@ -207,4 +215,29 @@ data class CommonTypeTree(
     val name : ID,
 ) : TypeTree{
     override fun toString() = name
+}
+data class NullableTypeTree(
+    override val line : Int,
+    override val column : Int,
+    val type : TypeTree
+) : TypeTree{
+    override fun toString() = "($type)?"
+}
+data class FunctionTypeTree(
+    override val line : Int,
+    override val column : Int,
+    val parameters : List<TypeTree>,
+    val returnType : TypeTree
+) : TypeTree{
+    override fun toString() =
+        "(${parameters.joinToString(",")})=>$returnType"
+}
+data class ApplyTypeTree(
+    override val line : Int,
+    override val column : Int,
+    val name : ID,
+    val arguments : List<TypeTree>
+) : TypeTree{
+    override fun toString() =
+        "$name<${arguments.joinToString(",")}>"
 }

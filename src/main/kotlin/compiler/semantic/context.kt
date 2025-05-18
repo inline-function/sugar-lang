@@ -97,6 +97,7 @@ data class Scope<T : Any>(
  * @property symbols    符号列表
  * @property parent     父作用域
  */
+@Suppress("JavaDefaultMethodsNotOverriddenByDelegation")
 data class MutableScope<T : Any>(
     @Suppress("DelegationToVarProperty")
     var symbols: MutableSymbols<T> = mutableListOf(),

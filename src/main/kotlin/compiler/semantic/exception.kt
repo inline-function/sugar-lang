@@ -3,7 +3,9 @@
 package compiler.semantic
 
 import compiler.parser.VariableTree
+import compiler.semantic.beErasedBy
 import tools.ID
+import tools.input
 
 //检查函数
 context(info : MutableInformation,scope : LexicalScope)
@@ -43,9 +45,7 @@ fun duplicate_tags(tags : List<Tag>){
 //找不到类型
 context(info : MutableInformation,scope : LexicalScope)
 inline fun no_such_type(type : TypeTree,block : ()->Unit = {}){
-    scope.findSymbol {
-        it is ClassTag && it.name == type.name
-    } ?: run {
+    scope.findClassSymbol(type.name) ?: run {
         info.errors += type.Message("编译器没有在这儿找到'$type'类型,可能是因为你忘记写这个类型了,打错字了,忘记导入库了,或者写在其他作用域了")
         block()
     }
@@ -53,28 +53,38 @@ inline fun no_such_type(type : TypeTree,block : ()->Unit = {}){
 //找不到成员
 context(info : MutableInformation,scope : LexicalScope)
 inline fun no_such_member(type : ClassTag,member : String,block : ()->Unit = {}){
-    type.members.find {
-        it.name == member
+    when(type){
+        is ClassDef  -> type.prototype.members.find {
+            it.name == member
+        }
+        is ClassHead -> type.members.find {
+            it.name == member
+        }
     } ?: run {
         info.errors += type.Message("编译器没有在'${type.name}'中找到'$member',你是不是忘记写这个成员?还是拼错了?")
         block()
     }
 }
-//找不到变量
+//找不到变量以及函数
 context(info : MutableInformation,scope : LexicalScope)
 inline fun no_such_variable(variable : ID,line : Int,column : Int,block : ()->Unit = {}){
     scope.findSymbol {
-        it is VariableTag && it.name == variable
+        it is CallableTag && it.name == variable
     } ?: run {
-        info.errors += Message("编译器没有在这儿找到变量'$variable',可能是因为你忘记写这个变量了,打错字了,忘记导入库了,或者写在其他作用域了",line,column)
+        info.errors += Message("编译器没有在这儿找到'$variable',可能是因为你忘记写它了,打错字了,忘记导入库了,或者写在其他作用域了",line,column)
         block()
     }
 }
 //不可调用
 context(info : MutableInformation,scope : LexicalScope)
 inline fun no_invoke_function(classTag : ClassTag,block : ()->Unit = {}){
-    classTag.members.find {
-        it is FunctionTag && it.name == invokeFunctionName
+    when(classTag){
+        is ClassDef  -> classTag.prototype.members.find {
+            it is FunctionTag && it.name == invokeFunctionName
+        }
+        is ClassHead -> classTag.members.find {
+            it is FunctionTag && it.name == invokeFunctionName
+        }
     } ?: run{
         info.errors += classTag.Message("类型'${classTag.name}'不能当成函数进行调用,因为它没有invoke函数")
         block()
@@ -82,10 +92,57 @@ inline fun no_invoke_function(classTag : ClassTag,block : ()->Unit = {}){
 }
 //参数类型不匹配
 context(info : MutableInformation,scope : LexicalScope)
-inline fun parameter_type_error(func : FunctionTag,arg : List<ExpressionTree>,block : ()->Unit = {}){
-    func.parameters.forEachIndexed { index, tag ->
-        if(tag.type!! isNotCastableTo arg[index].type)
-            info.errors += tag.Message("函数的'${tag.name}'的类型是'${tag.type!!.name}',但是你填的值的类型是'${arg[index].type.name}'")
+inline fun parameter_type_error(
+    func : FunctionTag,
+    by : TypeTree,
+    arg : List<ExpressionTree>,
+    line : Int,
+    column : Int,
+    block : ()->Unit = {}
+){
+    val real = func paramTypeBeErasedBy by
+    when(func){
+        is FunctionDef  -> func.prototype.parameters.forEachIndexed { index, tag ->
+            if(real[index] isNotCastableTo arg[index].type){
+                info.errors += Message("函数的参数'${tag.name}'类型是'${real[index]}',但是你填的值的类型是'${arg[index].type}'",line,column)
+                block()
+            }
+        }
+        is FunctionHead -> func.parameters.forEachIndexed { index, tag ->
+            if(real[index] isNotCastableTo arg[index].type){
+                info.errors += Message("函数的参数'${tag.name}'类型是'${real[index]}',但是你填的值的类型是'${arg[index].type}'",line,column)
+                block()
+            }
+        }
+    }
+}
+//变量没有初始化
+context(info : MutableInformation,scope : LexicalScope)
+inline fun no_such_variable_init(variable : compiler.semantic.VariableTree,block : ()->Unit = {}){
+    variable.value ?: run {
+        info.errors += variable.Message("变量'${variable.name}'没有初始化,如果你希望暂时不赋值,请在变量后面加'? = null'")
+        block()
+    }
+}
+//无法转换类型
+context(info : MutableInformation,scope : LexicalScope)
+inline fun no_such_castable_type(
+    from : TypeTree,to : TypeTree,
+    block : ()->Unit = {}
+){
+    if(from isNotCastableTo to){
+        info.errors += from.Message("编译器无法将类型'$from'转换为类型'$to'")
+        block()
+    }
+}
+//无需求lambda的参数没有声明参数类型
+context(info : MutableInformation,scope : LexicalScope)
+inline fun no_such_lambda_parameter_type(params : List<compiler.semantic.VariableTree>, block : ()->Unit = {}){
+    params.forEach {
+        it.returnType ?: run {
+            info.errors += it.Message("不知道你的匿名函数参数类型是什么,请你自己在参数名字后面加': 类型'进行指定")
+            block()
+        }
     }
 }
 //该类型没有该变量或函数

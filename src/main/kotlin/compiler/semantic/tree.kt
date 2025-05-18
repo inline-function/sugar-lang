@@ -6,6 +6,7 @@
  */
 package compiler.semantic
 
+import compiler.parser.Body
 import tools.*
 
 /**
@@ -73,6 +74,7 @@ data class NameTree(
  * 描述一个词法作用域
  * @property stmts 作用域内的语句
  */
+@Suppress("JavaDefaultMethodsNotOverriddenByDelegation")
 @Builder
 data class BlockTree(
     val stmts : List<StatementTree>,
@@ -100,6 +102,7 @@ data class ClassTree(
     override val column : Int,
     override val name : ID,
     val parents : List<TypeTree>,
+    val typeParameters : List<ID>,
     val members : List<CallableTree>,
 ) : TopTree {
     override fun toString() =
@@ -136,9 +139,10 @@ data class VariableTree(
 @Builder
 data class FunctionTree(
     override val line : Int,
-    override val returnType : TypeTree?,
+    override val returnType : TypeTree,
     override val name : ID,
     override val column : Int,
+    val typeParameters : List<ID>,
     val body : BlockTree?,
     val parameters : List<VariableTree>,
 ) : CallableTree {
@@ -169,6 +173,7 @@ data class InvokeTree(
     override val column : Int,
     val invoker : ExpressionTree,
     val arguments : List<ExpressionTree>,
+    val typeArguments : List<TypeTree>,
     override val type : TypeTree,
 ) : ExpressionTree{
     override fun toString() =
@@ -193,6 +198,14 @@ data class StringConstantTree(
 ) : FaceConstantTree{
     override fun toString() = "\"$value\""
 }
+@Builder
+data class LambdaTree(
+    override val line : Int,
+    override val column : Int,
+    val parameters : List<VariableTree>,
+    val body : BlockTree,
+    override val type : TypeTree,
+) : ExpressionTree
 /**
  * 描述一个数字字面值
  */
@@ -226,6 +239,7 @@ data class DecimalConstantTree(
  */
 sealed interface TypeTree : InnerTree{
     val name : ID
+    val fullName : ID
 }
 /**
  * 描述一个平凡类型
@@ -237,5 +251,48 @@ data class CommonTypeTree(
     override val column : Int,
     override val name : ID,
 ) : TypeTree{
+    override val fullName : ID
+        get() = name
     override fun toString() = name
+}
+@Builder
+data class NullableTypeTree(
+    override val line : Int,
+    override val column : Int,
+    val type : TypeTree,
+) : TypeTree {
+    override val name : ID
+        get() = "Nullable"
+    override val fullName : ID
+        get() = "Nullable<$type>"
+    override fun toString() = "($type)?"
+}
+@Builder
+data class FunctionTypeTree(
+    override val line : Int,
+    override val column : Int,
+    val parameters : List<TypeTree>,
+    val returnType : TypeTree,
+) : TypeTree {
+    override val name : ID
+        get() = "Function" + parameters.size
+    override val fullName : ID
+        get() = if(parameters.isEmpty())
+            "Function0<$returnType>"
+        else
+            "Function${parameters.size}<${parameters.joinToString(",")},$returnType>"
+    override fun toString() =
+        "(${parameters.joinToString(",")})=>$returnType"
+}
+@Builder
+data class ApplyTypeTree(
+    override val line : Int,
+    override val column : Int,
+    override val name : ID,
+    val arguments : List<TypeTree>
+) : TypeTree {
+    override val fullName : ID
+        get() = "$name<${arguments.joinToString(",")}>"
+    override fun toString() =
+        "$name<${arguments.joinToString(",")}>"
 }

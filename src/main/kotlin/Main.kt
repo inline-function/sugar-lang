@@ -1,12 +1,6 @@
 import compiler.antlr.toSugarTree
 import compiler.semantic.semanticAnalysis
 import tools.SideEffect
-import tools.catch
-import tools.finally
-import tools.function
-import tools.input
-import tools.invoke
-import tools.lambda
 
 /**
  * 对action进行指定次数的计时输出
@@ -30,10 +24,23 @@ inline fun time(times : Int = 1,action : (Int)->Unit){
 @SideEffect
 fun main() = time{
     """
+        |class Unit
         |class Int
-        |val i : Int = 0
+        |class Function
+        |class Function0<R> : Function {
+        |    fun invoke() : R
+        |}
+        |class Function1<A,R> : Function{
+        |    fun invoke(a : A) : R
+        |}
+        |fun lambda(it : ()=>Unit) : Int{
+        |    1
+        |}
         |fun main() {
-        |    val a = i
+        |    lambda(1)
+        |    val l : (()=>Unit)=>Int = lambda
+        |    val b : Int = l({})
+        |    val c = lambda({})
         |}
     """
         .trimMargin()
