@@ -33,14 +33,10 @@ fun main() = time{
         |class Function1<A,R> : Function{
         |    fun invoke(a : A) : R
         |}
-        |fun lambda(it : ()=>Unit) : Int{
-        |    1
-        |}
         |fun main() {
-        |    lambda(1)
-        |    val l : (()=>Unit)=>Int = lambda
-        |    val b : Int = l({})
-        |    val c = lambda({})
+        |    val lambda : (Int)=>Int = {
+        |        a => a
+        |    }
         |}
     """
         .trimMargin()

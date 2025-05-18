@@ -131,7 +131,7 @@ inline fun no_such_castable_type(
     block : ()->Unit = {}
 ){
     if(from isNotCastableTo to){
-        info.errors += from.Message("编译器无法将类型'$from'转换为类型'$to'")
+        info.errors += to.Message("编译器无法将类型'$from'转换为类型'$to'")
         block()
     }
 }
@@ -143,6 +143,14 @@ inline fun no_such_lambda_parameter_type(params : List<compiler.semantic.Variabl
             info.errors += it.Message("不知道你的匿名函数参数类型是什么,请你自己在参数名字后面加': 类型'进行指定")
             block()
         }
+    }
+}
+//类型不是函数类型
+context(info : MutableInformation,scope : LexicalScope)
+inline fun type_is_not_function_type(type : TypeTree,block : ()->Unit = {}){
+    if(type !is FunctionTypeTree){
+        info.errors += type.Message("类型'$type'不是一个函数类型,此处需要函数类型")
+        block()
     }
 }
 //该类型没有该变量或函数

@@ -402,38 +402,39 @@ fun ExpressionSyntaxTree.toAst(requirementType : TypeTree? = null) : ExpressionT
 context(info : MutableInformation,scope : LexicalScope)
 fun LambdaSyntaxTree.toAst(
     requirementType : TypeTree?
-) = scope.subScope.run {
+) : LambdaTree? = scope.subScope.run {
     buildLambdaTree(
         line       = line,
         column     = column,
-        parameters = parameters.map { VariableHead(it).result }.toMutableList(),
-        body       = BlockTree(
-            stmts  = body.mapNotNull { it.toAst() },
-            line   = line,
-            column = column
-        )
     ) {
         //判断是否有需求
         if(requirementType != null){
-            //TODO("需求类型推导未实现")
-            //没有需求类型,检查每一个参数是否声明类型
+            //判断需求类型是否是函数类型
             check {
-                no_such_lambda_parameter_type(parameters)
+                type_is_not_function_type(requirementType) { return@toAst null }
             }
-            //根据参数类型,附加匿名函数的类型
-            type = FunctionTypeTree(
-                line       = line!!,
-                column     = column!!,
-                parameters = parameters.mapNotNull { it.returnType },
-                returnType = when(val last = body!!.lastOrNull()){
-                    is ExpressionTree -> last.type
-                    else              -> unit
-                }
-            )
+            requirementType as FunctionTypeTree
+            //匿名函数参数列表
+            parameters = (
+                this@toAst.parameters.firstOrNull()?.returnType?.let {
+                    this@toAst.parameters.map {
+                        VariableHead(it).result
+                    }
+                } ?: (this@toAst.parameters zip requirementType.parameters)
+                    .map { (param,type) ->
+                        VariableHead(param).result.copy(returnType = type)
+                    }
+            ).toMutableList()
+            //添加参数
+            scope.symbols.addAll(parameters.map { VariableDef(it) })
         }else{
+            //匿名函数参数列表
+            parameters = this@toAst.parameters.map { VariableHead(it).result }.toMutableList()
+            //添加参数
+            scope.symbols.addAll(parameters.map { VariableDef(it) })
             //没有需求类型,检查每一个参数是否声明类型
             check {
-                no_such_lambda_parameter_type(parameters)
+                no_such_lambda_parameter_type(parameters) { return@toAst null }
             }
             //根据参数类型,附加匿名函数的类型
             type = FunctionTypeTree(
@@ -446,6 +447,28 @@ fun LambdaSyntaxTree.toAst(
                 }
             )
         }
+        //求值函数体
+        body = BlockTree(
+            stmts  = this@toAst.body.mapNotNull { it.toAst() },
+            line   = this@toAst.line,
+            column = this@toAst.column
+        )
+        //匿名函数的返回类型
+        val returnType = when(val last = body?.lastOrNull()){
+            is ExpressionTree -> last.type
+            else              -> unit
+        }
+        //检查匿名函数的返回类型是否和需求类型一致
+        check(requirementType != null && requirementType.returnType != unit) {
+            no_such_castable_type(returnType,requirementType!!.returnType) { return@toAst null }
+        }
+        //根据需求参数类型,附加匿名函数的类型
+        type = FunctionTypeTree(
+            line       = line!!,
+            column     = column!!,
+            parameters = parameters.mapNotNull { it.returnType },
+            returnType = returnType,
+        )
     }.result
 }
 context(info : MutableInformation,scope : LexicalScope)
