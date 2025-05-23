@@ -7,9 +7,6 @@
 @file:Suppress("NestedLambdaShadowedImplicitParameter","NAME_SHADOWING","RedundantModalityModifier")
 
 package compiler.semantic
-import compiler.semantic.returnType
-import compiler.semantic.type
-import compiler.semantic.value
 import compiler.parser.LambdaTree as LambdaSyntaxTree
 import compiler.parser.ApplyTypeTree as ApplyTypeSyntaxTree
 import compiler.parser.FunctionTypeTree as FunctionTypeSyntaxTree

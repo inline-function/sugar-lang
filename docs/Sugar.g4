@@ -22,6 +22,7 @@ fragment HEX
 
 //整个文件
 file : (top+ EOF) | EOF;
+//注解
 //数字字面量
 number : INT | DEC;
 //顶层语句
