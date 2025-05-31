@@ -7,6 +7,7 @@
 package compiler.antlr
 
 import compiler.antlr.SugarParser.*
+import compiler.parser.AnnotationTree
 import compiler.parser.Body
 import compiler.parser.ClassTree
 import compiler.parser.CommonTypeTree
@@ -87,12 +88,23 @@ fun TopContext.toSugarTree() =
  * @return 白砂糖语法树
  */
 fun VariableContext.toSugarTree() = VariableTree(
-    line       = getStart().line,
-    column     = getStart().charPositionInLine,
-    name       = ID().text,
-    value      = expr()?.toSugarTree(),
+    line = getStart().line,
+    column = getStart().charPositionInLine,
+    name = ID().text,
+    value = expr()?.toSugarTree(),
     returnType = type()?.toSugarTree(),
-    isMutable  = VAL()?.let { false } ?: true,
+    isMutable = VAL()?.let { false } ?: true,
+    annotations = modifier().run {
+        annotation().map(AnnotationContext::toSugarTree) +
+        ID().map {
+            AnnotationTree(
+                line = getStart().line,
+                column = getStart().charPositionInLine,
+                name = it.text,
+                arguments = null
+            )
+        }
+    },
 )
 /**
  * 关于函数树的转换函数
@@ -100,13 +112,24 @@ fun VariableContext.toSugarTree() = VariableTree(
  * @return 白砂糖语法树
  */
 fun FunctionContext.toSugarTree() = FunctionTree(
-    line           = getStart().line,
-    returnType     = type()?.toSugarTree(),
-    name           = ID().text,
-    column         = getStart().charPositionInLine,
-    body           = body()?.toSugarTree(),
-    parameters     = parameter().map(ParameterContext::toSugarTree),
+    line = getStart().line,
+    returnType = type()?.toSugarTree(),
+    name = ID().text,
+    column = getStart().charPositionInLine,
+    body = body()?.toSugarTree(),
+    parameters = parameter().map(ParameterContext::toSugarTree),
     typeParameters = typeParamList()?.ID()?.map { text } ?: emptyList(),
+    annotations = modifier().run {
+        annotation().map(AnnotationContext::toSugarTree) +
+        ID().map {
+            AnnotationTree(
+                line = getStart().line,
+                column = getStart().charPositionInLine,
+                name = it.text,
+                arguments = null
+            )
+        }
+    },
 )
 /**
  * 关于参数树的转换函数
@@ -114,12 +137,13 @@ fun FunctionContext.toSugarTree() = FunctionTree(
  * @return 白砂糖语法树
  */
 fun ParameterContext.toSugarTree() = VariableTree(
-    line       = getStart().line,
-    column     = getStart().charPositionInLine,
-    name       = ID().text,
-    value      = expr()?.toSugarTree(),
+    line = getStart().line,
+    column = getStart().charPositionInLine,
+    name = ID().text,
+    value = expr()?.toSugarTree(),
     returnType = type().toSugarTree(),
-    isMutable  = false,
+    isMutable = false,
+    annotations = listOf(),
 )
 fun FunctionTypeContext.toSugarTree() = FunctionTypeTree(
     line       = getStart().line,
@@ -150,13 +174,24 @@ fun StmtContext.toSugarTree() = top()?.toSugarTree() ?: expr().toSugarTree()
  * @return 白砂糖语法树
  */
 fun ClassContext.toSugarTree() = ClassTree(
-    line           = getStart().line,
-    column         = getStart().charPositionInLine,
-    name           = ID().text,
-    parents        = type().map(TypeContext::toSugarTree),
+    line = getStart().line,
+    column = getStart().charPositionInLine,
+    name = ID().text,
+    parents = type().map(TypeContext::toSugarTree),
     typeParameters = typeParamList()?.ID()?.map { it.text } ?: emptyList(),
-    members        = function().map(FunctionContext::toSugarTree) +
-                     variable().map(VariableContext::toSugarTree)
+    members = function().map(FunctionContext::toSugarTree) +
+            variable().map(VariableContext::toSugarTree),
+    annotations = modifier().run {
+        annotation().map(AnnotationContext::toSugarTree) +
+        ID().map {
+            AnnotationTree(
+                line = getStart().line,
+                column = getStart().charPositionInLine,
+                name = it.text,
+                arguments = null
+            )
+        }
+    }
 )
 /**
  * 关于表达式树的转换函数
@@ -197,10 +232,18 @@ fun LambdaContext.toSugarTree() : LambdaTree =
                     name = it.text,
                     value = null,
                     returnType = null,
-                    isMutable = false
+                    isMutable = false,
+                    annotations = listOf(),
                 )
             },
         body = stmt().map(StmtContext::toSugarTree),
+    )
+fun AnnotationContext.toSugarTree() : AnnotationTree =
+    AnnotationTree(
+        line = getStart().line,
+        column = getStart().charPositionInLine,
+        name = ID().text,
+        arguments = expr()?.toSugarTree()
     )
 /**
  * 关于调用树的转换函数

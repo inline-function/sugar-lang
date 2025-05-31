@@ -12,7 +12,9 @@ import tools.*
 /**
  * 语义分析阶段的语法树共同父类
  */
-sealed interface Tree
+sealed interface Tree{
+    fun asString() : String
+}
 /**
  * 语义分析阶段的文件内语法树共同父类
  * @property line 行号
@@ -32,7 +34,7 @@ data class ProjectTree(
     val name : ID,
     val files : List<FileTree>
 ) : Tree {
-    override fun toString() =
+    override fun asString() =
         files.joinToString(
             separator = "\n",
             prefix = "/* 工程$name */\n"
@@ -47,7 +49,7 @@ data class FileTree(
     val name : ID,
     val tops : List<TopTree>,
 ) : Tree {
-    override fun toString() =
+    override fun asString() =
         tops.joinToString(
             separator = "\n",
             prefix = "//文件名:$name\n"
@@ -65,7 +67,7 @@ data class NameTree(
     val name : ID,
     override val type : TypeTree,
 ) : ExpressionTree {
-    override fun toString() : String =
+    override fun asString() : String =
         if(expression != null)
             "(${expression}).$name"
         else name
@@ -80,7 +82,9 @@ data class BlockTree(
     val stmts : List<StatementTree>,
     override val line : Int,
     override val column : Int,
-) : InnerTree,List<StatementTree> by stmts
+) : InnerTree,List<StatementTree> by stmts{
+    override fun asString() = TODO()
+}
 /**
  * 描述一个语句
  */
@@ -91,6 +95,7 @@ sealed interface StatementTree : InnerTree
  */
 sealed interface TopTree : StatementTree {
     val name : ID
+    val annotations : List<AnnotationTree>
 }
 /**
  * 描述一个类,值得一提的是,相比kt的类,它更接近接口
@@ -104,8 +109,9 @@ data class ClassTree(
     val parents : List<TypeTree>,
     val typeParameters : List<ID>,
     val members : List<CallableTree>,
+    override val annotations : List<AnnotationTree>,
 ) : TopTree {
-    override fun toString() =
+    override fun asString() =
         "class $name${if(parents.isNotEmpty()) "  :" else ""} ${parents.joinToString(",")} {\n${members.joinToString("\n")}\n}"
 }
 /**
@@ -126,9 +132,10 @@ data class VariableTree(
     override val name : ID,
     val value : ExpressionTree?,
     override val returnType : TypeTree?,
-    val isMutable : Boolean
+    val isMutable : Boolean,
+    override val annotations : List<AnnotationTree>,
 ) : CallableTree {
-    override fun toString() =
+    override fun asString() =
         "${if(isMutable) "var" else "val"} $name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"
 }
 /**
@@ -145,8 +152,9 @@ data class FunctionTree(
     val typeParameters : List<ID>,
     val body : BlockTree?,
     val parameters : List<VariableTree>,
+    override val annotations : List<AnnotationTree>,
 ) : CallableTree {
-    override fun toString() =
+    override fun asString() =
         ("fun $name(${parameters.joinToString(",")})")+
                 (returnType?.let{" : $it"} ?: "")+
                 (body?.stmts?.joinToString(
@@ -176,8 +184,17 @@ data class InvokeTree(
     val typeArguments : List<TypeTree>,
     override val type : TypeTree,
 ) : ExpressionTree{
-    override fun toString() =
+    override fun asString() =
         "($invoker(${arguments.joinToString(",")}))"
+}
+data class AnnotationTree(
+    override val line : Int,
+    override val column : Int,
+    val name : ID,
+    val arguments : ExpressionTree?
+) : InnerTree {
+    override fun asString() =
+        "@$name(${arguments?.let{""}})"
 }
 /**
  * 描述一个字面值常量
@@ -196,7 +213,7 @@ data class StringConstantTree(
     override val value : String,
     override val type : TypeTree,
 ) : FaceConstantTree{
-    override fun toString() = "\"$value\""
+    override fun asString() = "\"$value\""
 }
 @Builder
 data class LambdaTree(
@@ -205,7 +222,9 @@ data class LambdaTree(
     val parameters : List<VariableTree>,
     val body : BlockTree,
     override val type : TypeTree,
-) : ExpressionTree
+) : ExpressionTree{
+    override fun asString() = TODO()
+}
 /**
  * 描述一个数字字面值
  */
@@ -220,7 +239,7 @@ data class IntegerConstantTree(
     override val value : Int,
     override val type : TypeTree,
 ) : NumberConstantTree{
-    override fun toString() = value.toString()
+    override fun asString() = value.toString()
 }
 /**
  * 描述一个小数字面值
@@ -232,7 +251,7 @@ data class DecimalConstantTree(
     override val value : Double,
     override val type : TypeTree,
 ) : NumberConstantTree{
-    override fun toString() = value.toString()
+    override fun asString() = value.toString()
 }
 /**
  * 描述一个类型表达式
@@ -253,7 +272,7 @@ data class CommonTypeTree(
 ) : TypeTree{
     override val fullName : ID
         get() = name
-    override fun toString() = name
+    override fun asString() = name
 }
 @Builder
 data class NullableTypeTree(
@@ -265,7 +284,7 @@ data class NullableTypeTree(
         get() = "Nullable"
     override val fullName : ID
         get() = "Nullable<$type>"
-    override fun toString() = "($type)?"
+    override fun asString() = "($type)?"
 }
 @Builder
 data class FunctionTypeTree(
@@ -281,7 +300,7 @@ data class FunctionTypeTree(
             "Function0<$returnType>"
         else
             "Function${parameters.size}<${parameters.joinToString(",")},$returnType>"
-    override fun toString() =
+    override fun asString() =
         "(${parameters.joinToString(",")})=>$returnType"
 }
 @Builder
@@ -293,6 +312,6 @@ data class ApplyTypeTree(
 ) : TypeTree {
     override val fullName : ID
         get() = "$name<${arguments.joinToString(",")}>"
-    override fun toString() =
+    override fun asString() =
         "$name<${arguments.joinToString(",")}>"
 }

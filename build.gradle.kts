@@ -17,6 +17,8 @@ dependencies {
     testImplementation(kotlin("test"))
     implementation(kotlin("stdlib-jdk8"))
     implementation("org.antlr:antlr4-runtime:4.13.2")
+    implementation("org.ow2.asm:asm:9.5")
+    implementation("org.ow2.asm:asm-util:9.5")
 }
 
 tasks.test {

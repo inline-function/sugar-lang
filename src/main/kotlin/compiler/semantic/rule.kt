@@ -15,8 +15,7 @@ import compiler.parser.CallableTree as CallableSyntaxTree
 import compiler.parser.TopTree as TopSyntaxTree
 import tools.ID
 import tools.input
-import tools.never
-import java.io.Closeable
+import compiler.parser.AnnotationTree as AnnotationSyntaxTree
 import compiler.parser.StatementTree as StatementSyntaxTree
 import compiler.parser.ExpressionTree as ExpressionSyntaxTree
 import compiler.parser.DecimalConstantTree as DecimalConstantSyntaxTree
@@ -36,15 +35,17 @@ inline val rootScope : LexicalScope
     get() = MutableScope()
 inline val LexicalScope.subScope : LexicalScope
     get() = MutableScope(parent = this)
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 val TypeTree.definition : ClassTag?
     get() = scope.findClassSymbol(name)
 sealed interface Tag{
     val line   : Int
     val column : Int
     val name   : ID
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     val result : TopTree
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+    val annotations : List<AnnotationTree>
 }
 fun Tag(it : TopSyntaxTree) = when(it){
     is ClassSyntaxTree    -> ClassHead(it)
@@ -52,9 +53,9 @@ fun Tag(it : TopSyntaxTree) = when(it){
     is VariableSyntaxTree -> VariableHead(it)
 }
 sealed interface CallableTag : Tag{
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,anns : List<Annotation>)
     override val result : CallableTree
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     val type : TypeTree?
 }
 sealed interface HeadTag : Tag{
@@ -66,13 +67,13 @@ sealed interface DefTag : Tag{
 sealed interface FunctionTag : CallableTag{
     val typeParaments : List<ID>
     val parameters : List<VariableTag>
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     val typeAsVariable : FunctionTypeTree
 }
 sealed interface VariableTag : CallableTag
 sealed interface ClassTag : Tag{
     val typeParaments : List<ID>
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     val parents : List<TypeTree>
     val members : List<CallableTag>
 }
@@ -89,23 +90,30 @@ fun CallableTag(it : CallableTree) : CallableTag = when(it){
     override val column    : Int             get() = prototype.column
     override val name      : ID              get() = prototype.name
     final    val isMutable : Boolean         get() = prototype.isMutable
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+    override val annotations : List<AnnotationTree> get() = prototype.annotations.map { it.toAst() }
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     override val type      : TypeTree?       get() = prototype.returnType?.toAst()
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,anns : List<Annotation>)
     override val result : VariableTree
         get() = prototype.value?.toAst(type).let {
             VariableTree(
-                line       = line,
-                column     = column,
-                name       = name,
-                returnType = type ?: it?.type,
-                value      = it,
-                isMutable  = isMutable
+                line        = line,
+                column      = column,
+                name        = name,
+                returnType  = type ?: it?.type,
+                value       = it,
+                isMutable   = isMutable,
+                annotations = annotations
             ).also {
                 check(it.returnType != null) {
                     no_such_type(it.returnType!!)
                     it.value?.type?.apply {
                         no_such_castable_type(it.returnType,this)
+                    }
+                    it.annotations.forEach {
+                        no_such_annotation(it)
+                        annotation_parameter_error(it)
                     }
                 }
             }
@@ -115,18 +123,20 @@ fun CallableTag(it : CallableTree) : CallableTag = when(it){
     override val line   get() = prototype.line
     override val column get() = prototype.column
     override val name   get() = prototype.name
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+    override val annotations : List<AnnotationTree> get() = prototype.annotations.map { it.toAst() }
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     override val type  get() = prototype.returnType?.toAst() ?: unit
     override val typeParaments  get() = prototype.typeParameters
     override val parameters     get() = prototype.parameters.map(::VariableHead)
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     override val typeAsVariable get() = FunctionTypeTree(
         line       = line,
         column     = column,
         parameters = parameters.mapNotNull { it.type },
         returnType = type
     )
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,anns : List<Annotation>)
     override val result : FunctionTree
         get() = FunctionTree(
             line = line,
@@ -137,12 +147,13 @@ fun CallableTag(it : CallableTree) : CallableTag = when(it){
                 scope.subScope.apply {
                     typeParaments.map {
                         ClassSyntaxTree(
-                            line           = line,
-                            column         = column,
-                            name           = it,
+                            line = line,
+                            column = column,
+                            name = it,
                             typeParameters = emptyList(),
-                            parents        = emptyList(), //TODO(类型参数边界)
-                            members        = emptyList()
+                            parents = emptyList(), //TODO(类型参数边界)
+                            members = emptyList(),
+                            annotations = emptyList()
                         ) input ::ClassHead
                     } input ::addAll
                 }.run {
@@ -150,10 +161,15 @@ fun CallableTag(it : CallableTree) : CallableTag = when(it){
                 }
             },
             parameters = parameters.map { it.result },
-            typeParameters = typeParaments
+            typeParameters = typeParaments,
+            annotations = annotations
         ).also {
             check {
                 no_such_type(it.returnType)
+                it.annotations.forEach {
+                    no_such_annotation(it)
+                    annotation_parameter_error(it)
+                }
             }
         }
 }
@@ -161,44 +177,56 @@ fun CallableTag(it : CallableTree) : CallableTag = when(it){
     override val line   get() = prototype.line
     override val column get() = prototype.column
     override val name   get() = prototype.name
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+    override val annotations : List<AnnotationTree> get() = prototype.annotations.map { it.toAst() }
     override val typeParaments get() = prototype.typeParameters
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     override val parents       get() = prototype.parents.map { it.toAst() }
     override val members       get() = prototype.members.map(::CallableTag)
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,anns : List<Annotation>)
     override val result : ClassTree
         get() = ClassTree(
-            line    = line,
-            column  = column,
-            name    = name,
+            line = line,
+            column = column,
+            name = name,
             parents = parents,
             typeParameters = typeParaments,
             members = scope.subScope.apply {
                 addAll(
                     typeParaments.map {
                         ClassTree(
-                            line           = line,
-                            column         = column,
-                            name           = it,
+                            line = line,
+                            column = column,
+                            name = it,
                             typeParameters = emptyList(),
-                            parents        = emptyList(), //TODO(类型参数边界)
-                            members        = emptyList()
+                            parents = emptyList(), //TODO(类型参数边界)
+                            members = emptyList(),
+                            annotations = annotations
                         ) input ::ClassDef
                     }
                 )
             }.run {
                 members.map { it.result }
-            }
+            },
+            annotations = annotations
         ).also {
             it.parents.forEach {
                 check {
                     no_such_type(it)
                 }
             }
+            check {
+                it.annotations.forEach {
+                    no_such_annotation(it)
+                    annotation_parameter_error(it)
+                }
+            }
         }
 }
 @JvmInline value class VariableDef(override val prototype : VariableTree) : VariableTag,DefTag{
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+    override val annotations : List<AnnotationTree> get() = prototype.annotations
+    context(info : MutableInformation,scope : LexicalScope,anns : List<Annotation>)
     override val result : CallableTree
         get() = prototype.also {
             check(it.returnType != null) {
@@ -214,12 +242,14 @@ fun CallableTag(it : CallableTree) : CallableTag = when(it){
         get() = prototype.column
     override val name : ID
         get() = prototype.name
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     override val type : TypeTree?
         get() = prototype.returnType
 }
 @JvmInline value class FunctionDef(override val prototype : FunctionTree) : FunctionTag,DefTag{
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+    override val annotations : List<AnnotationTree> get() = prototype.annotations
+    context(info : MutableInformation,scope : LexicalScope,anns : List<Annotation>)
     override val result : CallableTree
         get() = prototype.also {
             check {
@@ -236,10 +266,10 @@ fun CallableTag(it : CallableTree) : CallableTag = when(it){
         get() = prototype.parameters.map(::VariableDef)
     override val typeParaments : List<ID>
         get() = prototype.typeParameters
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     override val type : TypeTree?
         get() = prototype.returnType
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     override val typeAsVariable get() = FunctionTypeTree(
         line       = line,
         column     = column,
@@ -248,20 +278,22 @@ fun CallableTag(it : CallableTree) : CallableTag = when(it){
     )
 }
 @JvmInline value class ClassDef(override val prototype : ClassTree) : ClassTag,DefTag{
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+    override val annotations : List<AnnotationTree> get() = prototype.annotations
     override val line : Int
         get() = prototype.line
     override val column : Int
         get() = prototype.column
     override val members : List<CallableTag>
         get() = prototype.members.map(::CallableTag)
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
     override val parents : List<TypeTree>
         get() = prototype.parents
     override val typeParaments : List<ID>
         get() = prototype.typeParameters
     override val name : ID
         get() = prototype.name
-    context(info : MutableInformation,scope : LexicalScope)
+    context(info : MutableInformation,scope : LexicalScope,anns : List<Annotation>)
     override val result : TopTree
         get() = prototype.also {
             it.parents.forEach {
@@ -305,11 +337,14 @@ fun LexicalScope.findFunctionSymbol(name : String) : FunctionTag?{
     return null
 }
 inline fun <T> compilation(
-    info : MutableInformation,scope : LexicalScope,
-    block : context(MutableInformation,LexicalScope) (MutableInformation,LexicalScope)->T
-) = with(info) { with(scope) { block(info,scope) } }
-fun ProjectSyntaxTree.semanticAnalysis() : SemanticResult=
-    compilation(MutableInformation(),rootScope){ info,scope ->
+    info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>,
+    block : context(MutableInformation,LexicalScope,List<Annotation>) (MutableInformation,LexicalScope)->T
+) = with(info) { with(scope) { with(annotations){ block(info,scope) } } }
+fun ProjectSyntaxTree.semanticAnalysis(
+    annotations : List<Annotation>,
+    annotationProcessors : List<AnnotationProcessor>
+) : SemanticResult =
+    compilation(MutableInformation(),rootScope,annotations){ info,scope ->
         //创建项目构建器
         val projectBuilder = buildProjectTree(name = name)
         //遍历每一个文件,转换成一个匿名函数,然后遍历匿名函数获取所有文件的抽象语法树
@@ -347,47 +382,60 @@ fun ProjectSyntaxTree.semanticAnalysis() : SemanticResult=
         check {
             duplicate_files(projectBuilder.files)
         }
-        //语义分析告一段落,且听下回分解
-        projectBuilder.result to info.result
+        //构造工程树
+        val rawProjectTree = projectBuilder.result
+        //对工程树依次应用注解处理器
+        val resultProjectTree = annotationProcessors.fold(rawProjectTree) {
+            project,processor -> processor(project)
+        }
+        //语义分析结束
+        resultProjectTree to info.result
     }
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun CommonTypeSyntaxTree.toAst() : CommonTypeTree =
     CommonTypeTree(line,column,name)
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun TypeSyntaxTree.toAst() : TypeTree = when(this){
     is CommonTypeSyntaxTree   -> toAst()
     is ApplyTypeSyntaxTree    -> toAst()
     is FunctionTypeSyntaxTree -> toAst()
     is NullableTypeSyntaxTree -> toAst()
 }
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun ApplyTypeSyntaxTree.toAst() = ApplyTypeTree(
     line      = line,
     column    = column,
     name      = name,
     arguments = arguments.map { it.toAst() }
 )
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun FunctionTypeSyntaxTree.toAst() = FunctionTypeTree(
     line       = line,
     column     = column,
     parameters = parameters.map { it.toAst() },
     returnType = returnType.toAst()
 )
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun NullableTypeSyntaxTree.toAst() = NullableTypeTree(
     line       = line,
     column     = column,
     type       = type.toAst()
 )
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+fun AnnotationSyntaxTree.toAst() = AnnotationTree(
+    line       = line,
+    column     = column,
+    name       = name,
+    arguments  = arguments?.toAst()
+)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun StatementSyntaxTree.toAst() : StatementTree? = when(this){
     is ExpressionSyntaxTree -> toAst()
     is FunctionSyntaxTree   -> FunctionHead(this).result.apply { scope.symbols.add(FunctionDef(this)) }
     is VariableSyntaxTree   -> VariableHead(this).result.apply { no_such_variable_init(this) ; scope.symbols.add(VariableDef(this))  }
     is ClassSyntaxTree      -> ClassHead(this).result.apply { scope.symbols.add(ClassDef(this)) }
 }
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun ExpressionSyntaxTree.toAst(requirementType : TypeTree? = null) : ExpressionTree? = when(this){
     is DecimalConstantSyntaxTree -> toAst()
     is IntegerConstantSyntaxTree -> toAst()
@@ -396,7 +444,7 @@ fun ExpressionSyntaxTree.toAst(requirementType : TypeTree? = null) : ExpressionT
     is NameSyntaxTree            -> toAst()
     is LambdaSyntaxTree          -> toAst(requirementType)
 }
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun LambdaSyntaxTree.toAst(
     requirementType : TypeTree?
 ) : LambdaTree? = scope.subScope.run {
@@ -468,7 +516,7 @@ fun LambdaSyntaxTree.toAst(
         )
     }.result
 }
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun NameSyntaxTree.toAst() : NameTree? =
     buildNameTree(
         line = line,
@@ -520,16 +568,16 @@ fun NameSyntaxTree.toAst() : NameTree? =
             }
         }
     }.result
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun StringConstantSyntaxTree.toAst() : StringConstantTree =
     StringConstantTree(line,column,value,CommonTypeTree(line,column,"Str"))
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun DecimalConstantSyntaxTree.toAst() : DecimalConstantTree =
     DecimalConstantTree(line,column,value,CommonTypeTree(line,column,"Dec"))
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun IntegerConstantSyntaxTree.toAst() : IntegerConstantTree =
     IntegerConstantTree(line,column,value,CommonTypeTree(line,column,"Int"))
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun InvokeSyntaxTree.toAst() : InvokeTree? =
     buildInvokeTree(
         line = line,

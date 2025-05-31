@@ -8,7 +8,7 @@ import tools.nullThen
 import tools.safeCast
 
 //允许接收者安全转换为某类型
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 infix fun TypeTree.isCastableTo(type : TypeTree) : Boolean{
     //如果类型是类型本身，则返回true
     if(type.fullName == fullName) return true
@@ -31,7 +31,7 @@ infix fun TypeTree.isCastableTo(type : TypeTree) : Boolean{
     return false
 }
 //上面函数的相反版本
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 infix fun TypeTree.isNotCastableTo(type : TypeTree) = !(this isCastableTo type)
 /**
  * 返回泛型参数的擦除版本(其实擦除这个词不太准确)
@@ -39,7 +39,7 @@ infix fun TypeTree.isNotCastableTo(type : TypeTree) = !(this isCastableTo type)
  * @param type 擦除依据类型 List<Int>
  * @return 擦除版本 Int
  */
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 infix fun TypeTree.beErasedBy(type : TypeTree) : TypeTree = type.definition.let {
     it ?: throw Error("应当确保type的definition非空再调用beErasedBy函数")
     when(type) {
@@ -83,7 +83,7 @@ infix fun TypeTree.beErasedBy(type : TypeTree) : TypeTree = type.definition.let 
  * @param type 擦除依据类型 ValueBox<Int>
  * @return 擦除版本 Int
  */
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 infix fun VariableTree.beErasedBy(type : TypeTree) : TypeTree? = type.definition.let {
     it ?: throw Error("应当确保type的definition非空再调用beErasedBy函数")
     val typeParaments = it.typeParaments
@@ -105,7 +105,7 @@ infix fun VariableTree.beErasedBy(type : TypeTree) : TypeTree? = type.definition
  * @param type 擦除依据类型 ValueBox<Int>
  * @return 擦除版本 Int
  */
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 infix fun VariableTag.beErasedBy(type : TypeTree) : TypeTree? = type.definition.let {
     it ?: throw Error("应当确保type的definition非空再调用beErasedBy函数")
     val typeParaments = it.typeParaments
@@ -128,7 +128,7 @@ infix fun VariableTag.beErasedBy(type : TypeTree) : TypeTree? = type.definition.
  * @param type 擦除依据类型 Getter<Int>
  * @return 擦除版本 Int
  */
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 infix fun FunctionTag.returnTypeBeErasedBy(type : TypeTree) : TypeTree? = type.definition.let {
     it ?: throw Error("应当确保type的definition非空再调用beErasedBy函数")
     //函数自己带的泛型类型参数
@@ -164,7 +164,7 @@ infix fun FunctionTag.returnTypeBeErasedBy(type : TypeTree) : TypeTree? = type.d
  * @param type 擦除依据类型 Setter<Int>
  * @return 擦除版本 {Int}
  */
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 infix fun FunctionTag.paramTypeBeErasedBy(type : TypeTree) : List<TypeTree> = type.definition.let {
     it ?: throw Error("应当确保type的definition非空再调用beErasedBy函数")
     //函数自己带的泛型类型参数

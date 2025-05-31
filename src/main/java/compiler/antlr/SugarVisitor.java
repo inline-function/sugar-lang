@@ -17,6 +17,18 @@ public interface SugarVisitor<T> extends ParseTreeVisitor<T> {
 	 */
 	T visitFile(SugarParser.FileContext ctx);
 	/**
+	 * Visit a parse tree produced by {@link SugarParser#annotation}.
+	 * @param ctx the parse tree
+	 * @return the visitor result
+	 */
+	T visitAnnotation(SugarParser.AnnotationContext ctx);
+	/**
+	 * Visit a parse tree produced by {@link SugarParser#modifier}.
+	 * @param ctx the parse tree
+	 * @return the visitor result
+	 */
+	T visitModifier(SugarParser.ModifierContext ctx);
+	/**
 	 * Visit a parse tree produced by {@link SugarParser#number}.
 	 * @param ctx the parse tree
 	 * @return the visitor result

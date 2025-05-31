@@ -18,6 +18,26 @@ public interface SugarListener extends ParseTreeListener {
 	 */
 	void exitFile(SugarParser.FileContext ctx);
 	/**
+	 * Enter a parse tree produced by {@link SugarParser#annotation}.
+	 * @param ctx the parse tree
+	 */
+	void enterAnnotation(SugarParser.AnnotationContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link SugarParser#annotation}.
+	 * @param ctx the parse tree
+	 */
+	void exitAnnotation(SugarParser.AnnotationContext ctx);
+	/**
+	 * Enter a parse tree produced by {@link SugarParser#modifier}.
+	 * @param ctx the parse tree
+	 */
+	void enterModifier(SugarParser.ModifierContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link SugarParser#modifier}.
+	 * @param ctx the parse tree
+	 */
+	void exitModifier(SugarParser.ModifierContext ctx);
+	/**
 	 * Enter a parse tree produced by {@link SugarParser#number}.
 	 * @param ctx the parse tree
 	 */

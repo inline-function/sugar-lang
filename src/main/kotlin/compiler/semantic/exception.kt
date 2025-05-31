@@ -3,12 +3,13 @@
 package compiler.semantic
 
 import compiler.parser.VariableTree
+import compiler.semantic.AnnotationValue.*
 import compiler.semantic.beErasedBy
 import tools.ID
 import tools.input
 
 //检查函数
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun check(
     bool : Boolean = true,
     block : context(MutableInformation,LexicalScope) ()->Unit
@@ -16,7 +17,7 @@ inline fun check(
     if(bool) block()
 }
 //重复文件
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun duplicate_files(files : List<FileTree>){
     files.groupBy { it.name }
          .filter  { it.value.size > 1 }
@@ -25,14 +26,14 @@ fun duplicate_files(files : List<FileTree>){
          }
 }
 //顶层变量没有类型
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun root_scope_variable_no_type(v : VariableTree){
     v.returnType ?: run {
         info.errors += v.Message("顶层变量必须指定类型,但是变量'${v.name}'没有指定类型")
     }
 }
 //重复标签
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 fun duplicate_tags(tags : List<Tag>){
     tags.groupBy { it.name }
         .filter { it.value.size > 1 }
@@ -43,7 +44,7 @@ fun duplicate_tags(tags : List<Tag>){
         }
 }
 //找不到类型
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun no_such_type(type : TypeTree,block : ()->Unit = {}){
     scope.findClassSymbol(type.name) ?: run {
         info.errors += type.Message("编译器没有在这儿找到'$type'类型,可能是因为你忘记写这个类型了,打错字了,忘记导入库了,或者写在其他作用域了")
@@ -51,7 +52,7 @@ inline fun no_such_type(type : TypeTree,block : ()->Unit = {}){
     }
 }
 //找不到成员
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun no_such_member(type : ClassTag,member : String,block : ()->Unit = {}){
     when(type){
         is ClassDef  -> type.prototype.members.find {
@@ -66,7 +67,7 @@ inline fun no_such_member(type : ClassTag,member : String,block : ()->Unit = {})
     }
 }
 //找不到变量以及函数
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun no_such_variable(variable : ID,line : Int,column : Int,block : ()->Unit = {}){
     scope.findSymbol {
         it is CallableTag && it.name == variable
@@ -76,7 +77,7 @@ inline fun no_such_variable(variable : ID,line : Int,column : Int,block : ()->Un
     }
 }
 //不可调用
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun no_invoke_function(classTag : ClassTag,block : ()->Unit = {}){
     when(classTag){
         is ClassDef  -> classTag.prototype.members.find {
@@ -91,7 +92,7 @@ inline fun no_invoke_function(classTag : ClassTag,block : ()->Unit = {}){
     }
 }
 //参数类型不匹配
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun parameter_type_error(
     func : FunctionTag,
     by : TypeTree,
@@ -117,7 +118,7 @@ inline fun parameter_type_error(
     }
 }
 //变量没有初始化
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun no_such_variable_init(variable : compiler.semantic.VariableTree,block : ()->Unit = {}){
     variable.value ?: run {
         info.errors += variable.Message("变量'${variable.name}'没有初始化,如果你希望暂时不赋值,请在变量后面加'? = null'")
@@ -125,7 +126,7 @@ inline fun no_such_variable_init(variable : compiler.semantic.VariableTree,block
     }
 }
 //无法转换类型
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun no_such_castable_type(
     from : TypeTree,to : TypeTree,
     block : ()->Unit = {}
@@ -136,7 +137,7 @@ inline fun no_such_castable_type(
     }
 }
 //无需求lambda的参数没有声明参数类型
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun no_such_lambda_parameter_type(params : List<compiler.semantic.VariableTree>, block : ()->Unit = {}){
     params.forEach {
         it.returnType ?: run {
@@ -146,11 +147,38 @@ inline fun no_such_lambda_parameter_type(params : List<compiler.semantic.Variabl
     }
 }
 //类型不是函数类型
-context(info : MutableInformation,scope : LexicalScope)
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
 inline fun type_is_not_function_type(type : TypeTree,block : ()->Unit = {}){
     if(type !is FunctionTypeTree){
         info.errors += type.Message("类型'$type'不是一个函数类型,此处需要函数类型")
         block()
+    }
+}
+//没有该注解
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+inline fun no_such_annotation(ann : AnnotationTree,block : ()->Unit = {}){
+    annotations.find {
+        it.name == ann.name
+    } ?: run {
+        info.errors += ann.Message("编译器没有找到叫做'${ann.name}'的注解,请检查是否写错或是否存在")
+        block()
+    }
+}
+//注解参数不正确
+context(info : MutableInformation,scope : LexicalScope,annotations : List<Annotation>)
+inline fun annotation_parameter_error(
+    annotation : AnnotationTree,
+    block : ()->Unit = {}
+){
+    val ann = annotations.find { annotation.name == it.name } ?: return
+    when(annotation.arguments){
+        is DecimalConstantTree if ann.value == DEC                     -> Unit
+        is IntegerConstantTree if ann.value == INT || ann.value == DEC -> Unit
+        is StringConstantTree  if ann.value == STR                     -> Unit
+        else                                                            -> run {
+            info.errors += annotation.Message("注解'${ann.name}'的参数应该是'${ann.value ?: "空"}',请检查你的注解参数")
+            block()
+        }
     }
 }
 //该类型没有该变量或函数
