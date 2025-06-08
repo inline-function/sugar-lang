@@ -121,20 +121,19 @@ data class ClassTree(
 sealed interface CallableTree : TopTree {
     val returnType : TypeTree?
 }
-/**
- * 描述一个变量
- * @property value 变量初始值
- */
 @Builder
 data class VariableTree(
     override val line : Int,
     override val column : Int,
     override val name : ID,
     val value : ExpressionTree?,
+    @Deprecated("返回类型始终不为空,因此你可以使用type而不是returnType")
     override val returnType : TypeTree?,
     val isMutable : Boolean,
     override val annotations : List<AnnotationTree>,
 ) : CallableTree {
+    @Suppress("DEPRECATION")
+    inline val type get() = returnType!!
     override fun asString() =
         "${if(isMutable) "var" else "val"} $name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"
 }

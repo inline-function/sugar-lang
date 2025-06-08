@@ -14,11 +14,13 @@ repositories {
 
 dependencies {
     ksp(project(":ksp"))
+    implementation(fileTree("libs") { include("*.jar") })
     testImplementation(kotlin("test"))
     implementation(kotlin("stdlib-jdk8"))
     implementation("org.antlr:antlr4-runtime:4.13.2")
-    implementation("org.ow2.asm:asm:9.5")
-    implementation("org.ow2.asm:asm-util:9.5")
+    //implementation("org.ow2.asm:asm:9.5")
+    //implementation("org.ow2.asm:asm-util:9.5")
+    implementation("com.squareup:kotlinpoet:2.2.0")
 }
 
 tasks.test {
@@ -32,7 +34,8 @@ tasks.withType<KotlinCompile>().configureEach {
         freeCompilerArgs.addAll(
             "-opt-in=kotlin.RequiresOptIn",
             "-Xcontext-parameters",
-            "-Xwhen-guards"
+            "-Xwhen-guards",
+            "-Xmulti-dollar-interpolation"
         )
     }
 }

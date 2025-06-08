@@ -32,7 +32,7 @@ number : INT | DEC;
 //顶层语句
 top : variable | function | class;
 //子程序体
-body : '{' NL? stmt (NL stmt)* NL? '}';
+body : ('{' NL? stmt (NL stmt)* NL? '}') | '{' NL? '}';
 //泛型列表声明
 typeParamList : '<' NL? ID ( NL? ',' NL? ID)* '>';
 //泛型列表

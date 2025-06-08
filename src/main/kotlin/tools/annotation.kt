@@ -15,7 +15,9 @@ import kotlin.reflect.KClass
  */
 @Retention(SOURCE)
 @Target(FUNCTION,PROPERTY_GETTER,PROPERTY_SETTER)
-annotation class SideEffect
+annotation class SideEffect(
+    val about : String = ""
+)
 /**
  * 该注解为类自动生成构建器模板代码
  */

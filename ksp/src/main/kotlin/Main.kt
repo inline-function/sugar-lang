@@ -7,7 +7,6 @@ import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import java.io.OutputStreamWriter
 const val builderJvmName = "tools.Builder"
-const val head = "@file:Suppress(\"NOTHING_TO_INLINE\",\"RedundantVisibilityModifier\",\"RemoveRedundantQualifierName\",\"unused\")"
 class BuilderSP(
     val codeGenerator: CodeGenerator,
     val logger: KSPLogger

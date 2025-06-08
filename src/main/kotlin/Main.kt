@@ -1,13 +1,13 @@
 import compiler.antlr.toSugarTree
-import compiler.ir.sugar.toIrs
+import compiler.kotlin.generateKotlinProject
 import compiler.semantic.Annotation
 import compiler.semantic.AnnotationProcessor
 import compiler.semantic.AnnotationValue
 import compiler.semantic.ProjectTree
 import compiler.semantic.semanticAnalysis
 import tools.SideEffect
-import vm.VMThread
-import vm.VirtualMachine
+import java.nio.file.Files
+import java.nio.file.Paths
 
 /**
  * 对action进行指定次数的计时输出
@@ -30,41 +30,41 @@ inline fun time(times : Int = 1,action : (Int)->Unit){
  */
 @SideEffect
 fun main() = time{
+    val path = "F:/JavaProjrct/sugerLang/docs/build"
     """
-        |class Unit
-        |class Str
-        |class Int {
-        |    fun add(arg : Int) : Int
-        |}
-        |class Function
-        |class Function0<R> : Function {
-        |    fun invoke() : R
-        |}
-        |class Function1<A,R> : Function {
-        |    fun invoke(a : A) : R
-        |}
-        |@jvm_function("sugar.Core.println")
+        |@jvm_function("sugar.Core:println")
         |fun print(text : Str)
         |fun main() {
+        |    /*
         |    val lambda : (Int)=>Int = { a =>
         |       a
         |    }
+        |    */
+        |    print("Hello,World!")
         |}
     """
         .trimMargin()
-        .toSugarTree(showTree = true)
+        .toSugarTree(showTree = true,fileName = "main")
+        .run {
+            copy(
+                files = files + Files.readString(
+                    Paths.get("F:\\JavaProjrct\\sugerLang\\core\\core.bst")
+                ).toSugarTree(fileName = "core").files
+            )
+        }
         .semanticAnalysis(annotations,apts)
         .apply {
-            println("语义分析后的抽象语法树:\n$first\n语义分析信息:\n$second")
+            println("语义分析后的抽象语法树 : $first\n语义分析信息:\n$second\n生成kotlin项目至 : $path")
         }
         .first
-        .toIrs()
-        .apply {
-            println("IR:\n$this")
-        }
-        .run { VirtualMachine.start(this) }
+        .generateKotlinProject(path)
+//        .apply {
+//            println("IR:\n$this")
+//        }
+//        .run { VirtualMachine.start(this) }
 }
 val annotations = listOf(
-    Annotation("jvm_function",AnnotationValue.STR)
+    Annotation("jvm_function",AnnotationValue.STR),
+    Annotation("mut"),
 )
 val apts : List<AnnotationProcessor> = emptyList()

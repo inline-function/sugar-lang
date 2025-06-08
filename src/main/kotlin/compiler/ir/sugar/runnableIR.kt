@@ -6,54 +6,44 @@
  */
 package compiler.ir.sugar
 
-/**
- * 表示一个标识符的值类。
- *
- * @property text 标识符的实际文本内容。
- */
-@JvmInline
-value class ID(val text: String) {
-    override fun toString() = "`$text`"
-}
-sealed interface ConstantValue
-@JvmInline
-value class IntegerConstant(val value : Int) : ConstantValue
-@JvmInline
-value class DecimalConstant(val value : Double) : ConstantValue
-@JvmInline
-value class StringConstant(val value : String) : ConstantValue
+import tools.ID
+
 /**
  * 密封接口，表示所有可运行的中间表示（IR）结构的基类型。
+ * 所有的 IR 结构都必须实现此接口。
  */
 sealed interface SugarRunnableIR
+
 /**
- * 表示赋值操作的中间表示。
+ * 表示变量赋值操作的 IR。
  *
- * @property name 被赋值变量的标识符。
- * @property value 变量被赋予的值的标识符。
- * @property type 赋值操作的数据类型的标识符。
- * @property isLocal 是否为局部变量
+ * @property name 目标变量的寄存器索引。
+ * @property value 源变量的寄存器索引。
+ * @property isLocal 是否目标变量是局部变量。
+ * @property formLocal 是否源变量是局部变量。
  */
 data class AssignIR(
-    val name: ID,
-    val value: ID,
-    val type: ID,
-    val isLocal : Boolean,
+    val name: Int,
+    val value: Int,
+    val isLocal: Boolean,
+    val formLocal: Boolean,
 ) : SugarRunnableIR
+
 /**
- * 表示常量赋值操作的中间表示。
+ * 表示常量赋值操作的 IR。
  *
- * @property name 被赋值变量的标识符。
- * @property value 常量值。
- * @property isLocal 是否为局部变量
+ * @property name 目标变量的寄存器索引。
+ * @property value 要赋值的常量值。
+ * @property isLocal 是否目标变量是局部变量。
  */
 data class AssignConstantIR(
-    val name: ID,
-    val value: ConstantValue,
-    val isLocal : Boolean,
+    val name: Int,
+    val value: ConstantValue<*>,
+    val isLocal: Boolean,
 ) : SugarRunnableIR
+
 /**
- * 表示标签的中间表示。
+ * 表示标签的 IR。
  *
  * @property line 标签所在的行号。
  */
@@ -62,44 +52,72 @@ data class TagIR(
 ) : SugarRunnableIR
 
 /**
- * 表示跳转到指定标签的操作的中间表示。
+ * 表示跳转到指定标签的 IR。
  *
- * @property tag 目标标签的行号。
+ * @property tag 要跳转到的标签索引。
  */
 data class GoToIR(
     val tag: Int,
 ) : SugarRunnableIR
+
 /**
- * 表示返回操作的中间表示。
+ * 表示返回操作的 IR。
  *
- * @property value 返回值的标识符。
- * @property type 返回值的数据类型的标识符。
+ * @property value 返回值的寄存器索引。
+ * @property isLocal 是否返回值是局部变量。
  */
 data class ReturnIR(
-    val value: ID,
-    val type: ID,
+    val value: Int,
+    val isLocal: Boolean,
 ) : SugarRunnableIR
+
 /**
- * 表示成员赋值操作的中间表示。
+ * 表示成员变量赋值操作的 IR。
  *
- * @property name 对象实例的标识符。
- * @property member 成员变量的标识符。
- * @property result 赋值结果的标识符。
+ * @property name 对象实例的寄存器索引。
+ * @property member 成员变量的名称。
+ * @property result 结果存储的寄存器索引。
+ * @property isLocal 是否对象实例是局部变量。
+ * @property resultIsLocal 是否结果存储为局部变量。
  */
 data class AssignMemberIR(
-    val name: ID,
+    val name: Int,
     val member: ID,
-    val result: ID,
+    val result: Int,
+    val isLocal: Boolean,
+    val resultIsLocal: Boolean,
 ) : SugarRunnableIR
+
 /**
- * 表示函数调用操作的中间表示。
+ * 表示成员变量赋值操作的 IR。
  *
- * @property name 被调用函数的标识符。
- * @property args 函数调用传递的参数列表。
- * @property result 函数调用的结果标识符，如果不需要则可写null
+ * @property name 对象实例的寄存器索引。
+ * @property member 成员变量的名称。
+ * @property form 源变量的寄存器索引。
+ * @property isLocal 是否对象实例是局部变量。
+ * @property formLocal 是否源变量是局部变量。
+ */
+data class MemberAssignIR(
+    val name: Int,
+    val member: ID,
+    val form: Int,
+    val isLocal: Boolean,
+    val formLocal: Boolean,
+) : SugarRunnableIR
+
+/**
+ * 表示函数调用操作的 IR。
+ *
+ * @property name 调用的目标函数的寄存器索引。
+ * @property args 参数列表的寄存器索引。
+ * @property result 结果存储的寄存器索引（可选）。
+ * @property isLocal 是否目标函数是局部变量。
+ * @property resultIsLocal 是否结果存储为局部变量。
  */
 data class InvokeIR(
-    val name: ID,
-    val args: List<ID>,
-    val result: ID? = null,
+    val name: Int,
+    val args: List<Int>,
+    val result: Int? = null,
+    val isLocal: Boolean,
+    val resultIsLocal: Boolean,
 ) : SugarRunnableIR
