@@ -1,101 +1,123 @@
+@file:Suppress("NestedLambdaShadowedImplicitParameter")
+
 package compiler.kotlin
 
-import com.squareup.kotlinpoet.ClassName
-import com.squareup.kotlinpoet.FunSpec
-import com.squareup.kotlinpoet.LambdaTypeName
-import com.squareup.kotlinpoet.ParameterSpec
-import com.squareup.kotlinpoet.ParameterizedTypeName
+import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
-import com.squareup.kotlinpoet.PropertySpec
-import com.squareup.kotlinpoet.TypeName
-import com.squareup.kotlinpoet.TypeSpec
 import compiler.semantic.*
 import tools.SideEffect
-import java.io.*
+import java.io.File
+import java.io.FileOutputStream
+import kotlin.collections.forEach
 
-fun ClassTree.check() = when(name){
-    "Int","Dec","Str","Unit","Bool","Function" -> null
+context(nameMap : NameMap)
+fun ClassAST.check() = when(name) {
+    int,dec,str,unit -> null
     else if Regex("Function\\d+").matches(name) -> null
     else -> this
 }
-fun FunctionTree.check() = when {
-    annotations.any { it.name == "jvm_function" } -> null
+context(nameMap : NameMap)
+fun FunctionAST.check() = when {
+    annotations.any { it.name == "jvm_name" } -> null
     else -> this
 }
-external fun VariableTree.check() : VariableTree?
+context(nameMap : NameMap)
+fun VariableAST.check() : VariableAST? = this
+
 @SideEffect("io")
-fun ProjectTree.generateKotlinProject(path : String) {
+fun ProjectAST.generateKotlinProject(path : String) = with(nameMap) nameMap@{
+    this@nameMap.forEach { (ast,name) ->
+        this@nameMap[ast] = name
+            .takeUnless { ast.annotations.any { it.name == "jvm_name" } }
+            ?: when(val argument = ast.annotations.find { it.name == "jvm_name" }!!.arguments){
+                is StringConstantAST if argument.value.split(":").size == 1 -> argument.value
+                is StringConstantAST -> argument.value.split(":").let { "${it[0]}.${it[1]}" }
+                else -> TODO()
+            }
+    }
     val src = "$path/src"
     files.forEach { file ->
         FileOutputStream(File("$src/${file.name}.kts").also(File::createNewFile)).use { stream ->
             file.tops.forEach {
                 it.toKotlinCode()
-                    .let(String::toByteArray)
-                    .let(stream::write)
+                    .toByteArray()
+                    .takeUnless { it.isEmpty() }
+                    ?.let(stream::write)
             }
         }
     }
 }
-fun ClassTree.toKotlinCode() = TypeSpec
-    .interfaceBuilder(name)
+context(nameMap : NameMap)
+fun ClassAST.toKotlinCode() = TypeSpec
+    .interfaceBuilder(id)
     .let {
         members.fold(it) { acc, member ->
             when (member) {
-                is FunctionTree -> acc.addFunction(member.toKotlinCode())
-                is VariableTree -> acc.addProperty(member.toKotlinCode())
+                is FunctionAST -> acc.addFunction(member.toKotlinCode())
+                is VariableAST -> acc.addProperty(member.toKotlinCode())
             }
         }
     }
     .build()
-fun FunctionTree.toKotlinCode() = FunSpec
-    .builder(name)
+context(nameMap : NameMap)
+fun FunctionAST.toKotlinCode() = FunSpec
+    .builder(id)
     .let { builder ->
         parameters.fold(builder) { acc,it ->
             acc.addParameter(
                 ParameterSpec(
                     name = it.name,
-                    type = it.type.toKotlinCode(),
+                    type = it.returnType.toKotlinCode(),
                 )
             )
         }
     }
-    .addCode(body?.joinToString("\n") { it.toKotlinCode() } ?: "")
+    .addCode(body?.stmts?.joinToString("\n") { it.toKotlinCode() } ?: "")
     .returns(returnType.toKotlinCode())
     .build()
-fun VariableTree.toKotlinCode() = PropertySpec
+context(nameMap : NameMap)
+fun VariableAST.toKotlinCode() = PropertySpec
     .builder(
-        name = "",
-        type = type.toKotlinCode(),
+        name = id,
+        type = returnType.toKotlinCode(),
     )
-    .mutable(isMutable)
+    .initializer(value?.toKotlinCode()?.let { CodeBlock.of(it) })
+    .mutable(annotations.any { it.name == "mut" })
     .build()
-fun TypeTree.toKotlinCode() : TypeName = when(this){
-    is ApplyTypeTree    -> ClassName("",name)
-        .parameterizedBy(arguments.map(TypeTree::toKotlinCode))
-    is CommonTypeTree   -> ClassName("",name)
-    is FunctionTypeTree -> LambdaTypeName.get(
+context(nameMap : NameMap)
+fun TypeAST.toKotlinCode() : TypeName = when(this) {
+    is ApplyTypeAST    -> ClassName("",name.cid)
+        .parameterizedBy(arguments.map { it.toKotlinCode() })
+    is CommonTypeAST   -> ClassName("",name.cid)
+    is FunctionTypeAST -> LambdaTypeName.get(
         receiver   = null,
-        parameters = parameters.map(TypeTree::toKotlinCode).toTypedArray(),
+        parameters = parameters.map { it.toKotlinCode() }.toTypedArray(),
         returnType = returnType.toKotlinCode(),
     )
-    is NullableTypeTree -> type.toKotlinCode().copy(nullable = true)
+    is NullableTypeAST -> type.toKotlinCode().copy(nullable = true)
+    is TupleTypeAST    -> ClassName("","Tuple${arguments.size}")
 }
-fun StatementTree.toKotlinCode() : String = when(this){
-    is ExpressionTree -> toKotlinCode()
-    is TopTree        -> toKotlinCode()
+context(nameMap : NameMap)
+fun StatementAST.toKotlinCode() : String = when(this) {
+    is ExpressionAST -> toKotlinCode()
+    is TopAST        -> toKotlinCode()
 }
-fun ExpressionTree.toKotlinCode() : String = when(this){
-    is LambdaTree if parameters.isEmpty() -> "{\n${body.joinToString("\n") { it.toKotlinCode() }}\n}"
-    is NameTree   if expression != null   -> "${expression.toKotlinCode()}.$name"
-    is DecimalConstantTree -> value
-    is IntegerConstantTree -> value
-    is StringConstantTree  -> "\"$value\""
-    is InvokeTree          -> "(${invoker.toKotlinCode()}(${arguments.joinToString(",") { it.toKotlinCode() }}))"
-    is LambdaTree          -> "${parameters.joinToString(",") { "${it.name} : ${it.type.toKotlinCode()}" }} -> {\n${body.joinToString("\n") { it.toKotlinCode() }}\n}"
-    is NameTree            -> name
+context(nameMap : NameMap)
+fun ExpressionAST.toKotlinCode() : String = when(this) {
+    is LambdaAST if parameters.isEmpty() -> "{\n${body.stmts.joinToString("\n") { it.toKotlinCode() }}\n}"
+    is NameAST   if expression != null   -> "${expression.toKotlinCode()}.${name.fvid}"
+    is DecimalConstantAST -> value
+    is IntegerConstantAST -> value
+    is StringConstantAST  -> "\"$value\""
+    is InvokeAST          -> "(${invoker.toKotlinCode()}(${arguments.joinToString(",") { it.toKotlinCode() }}))"
+    is LambdaAST          -> "${parameters.joinToString(",") { "${it.name} : ${it.returnType.toKotlinCode()}" }} -> {\n${body.stmts.joinToString("\n") { it.toKotlinCode() }}\n}"
+    is NameAST            -> name.fvid
+    is AssignAST          -> "${name.toKotlinCode()} = ${value.toKotlinCode()}"
 }.toString()
-fun TopTree.toKotlinCode() : String = when(this){
-    is FunctionTree -> check()?.toKotlinCode()
-    is VariableTree -> check()?.toKotlinCode()
-    is ClassTree    -> check()?.toKotlinCode()
+context(nameMap : NameMap)
+fun TopAST.toKotlinCode() : String = when(this) {
+    is FunctionAST     -> check()?.toKotlinCode()
+    is VariableAST     -> check()?.toKotlinCode()
+    is ClassAST        -> check()?.toKotlinCode()
+    is TypeVariableAST -> TODO()
 }?.toString() ?: ""

@@ -7,50 +7,29 @@
 package compiler.semantic
 
 import compiler.parser.InnerTree
-import compiler.semantic.LexicalScope
 import compiler.semantic.MutableInformation
 import tools.*
+import java.util.function.IntFunction
 
-typealias Messages = List<Message>
-typealias MutableMessages = MutableList<Message>
-/**
- * 一条消息,包含消息行列与内容
- * @property line       消息所在行
- * @property column     消息所在列
- * @property content    消息内容
- */
-data class Message(
-    val content : String,
-    val line    : Int? = null,
-    val column  : Int? = null,
-) {
-    override fun toString() =
-        if(line != null && column != null)
-          "[第${line}行,第${column}列]$content"
-        else content
-}
-fun InnerTree.Message(content : String) = Message(content, line, column)
-fun compiler.semantic.InnerTree.Message(content : String) = Message(content, line, column)
-fun Tag.Message(content : String) = Message(content, line, column)
 /**
  * 语义分析过程中产生的信息
  *
- * @property sugar      建议
- * @property tips       提示
- * @property warnings   警告
- * @property errors     错误
+ * @property suggestions 建议
+ * @property hints       提示
+ * @property warnings    警告
+ * @property errors      错误
  */
 data class Information(
-    val sugar    : Messages = listOf(),
-    val tips     : Messages = listOf(),
-    val warnings : Messages = listOf(),
-    val errors   : Messages = listOf(),
+    val suggestions : List<Suggestion> = emptyList(),
+    val hints       : List<Hint>       = emptyList(),
+    val warnings    : List<Warning>    = emptyList(),
+    val errors      : List<Error>      = emptyList(),
 ){
     override fun toString() =
-        sugar.joinToString(
+        suggestions.joinToString(
             prefix = "建议:\n",
             separator = "\n",
-        ) + tips.joinToString(
+        ) + hints.joinToString(
             prefix = "提示:\n",
             separator = "\n",
         ) + warnings.joinToString(
@@ -64,61 +43,37 @@ data class Information(
 /**
  * 语义分析过程中用于构建只读信息的可变信息
  *
- * @property sugar      建议
- * @property tips       提示
- * @property warnings   警告
- * @property errors     错误
+ * @property suggestions 建议
+ * @property hints       提示
+ * @property warnings    警告
+ * @property errors      错误
  */
 data class MutableInformation(
-    var sugar    : MutableMessages = mutableListOf(),
-    var tips     : MutableMessages = mutableListOf(),
-    var warnings : MutableMessages = mutableListOf(),
-    var errors   : MutableMessages = mutableListOf(),
-)
+    val suggestions : MutableList<Suggestion> = mutableListOf(),
+    val hints       : MutableList<Hint>       = mutableListOf(),
+    val warnings    : MutableList<Warning>    = mutableListOf(),
+    val errors      : MutableList<Error>      = mutableListOf(),
+) {
+    operator fun plusAssign(exception : SemanticAnalysisException) = when(exception){
+        is Suggestion -> suggestions += exception
+        is Hint       -> hints += exception
+        is Warning    -> warnings += exception
+        is Error      -> errors += exception
+    }
+}
 val MutableInformation.result : Information
-    get() = Information(sugar.toList(), tips.toList(), warnings.toList(), errors.toList())
-
-typealias Symbols<T> = List<T>
-typealias MutableSymbols<T> = MutableList<T>
-
+    get() = Information(suggestions.toList(), hints.toList(), warnings.toList(), errors.toList())
 /**
- * 作用域（只读视图），提供符号、子作用域和父作用域
+ * 语义分析过程中使用的符号表
  *
- * @property symbols    符号列表
- * @property parent     父作用域
- */
-data class Scope<T : Any>(
-    val symbols  : Symbols<T> = listOf(),
-    val parent   : Scope<T>? = null,
-) : Symbols<T> by symbols
-/**
- * 可变作用域，用于构建作用域层次结构
- *
- * @property symbols    符号列表
- * @property parent     父作用域
+ * @property symbols  符号表
+ * @property parent  父符号表
  */
 @Suppress("JavaDefaultMethodsNotOverriddenByDelegation")
-data class MutableScope<T : Any>(
-    @Suppress("DelegationToVarProperty")
-    var symbols: MutableSymbols<T> = mutableListOf(),
-    var parent: MutableScope<T>? = null,
-) : MutableSymbols<T> by symbols
-@Suppress("RecursivePropertyAccessor")
-val <T : Any> MutableScope<T>.result: Scope<T>
-    get() = Scope(symbols.toList(), parent?.result)
+data class SymbolTable<T : Any>(
+    val symbols  : MutableList<T> = mutableListOf(),
+    val parent   : SymbolTable<T>? = null,
+) : MutableList<T> by symbols
 
-operator fun <T : Any> MutableScope<T>.plusAssign(symbol: T) {
-    symbols += symbol
-}
-
-val <T : Any> Scope<T>.depth: Int
-    get() = generateSequence(this) { it.parent }.count() - 1
-
-val <T : Any> Scope<T>.parents: List<Scope<T>>
-    get() = generateSequence(this) { it.parent }.toList()
-
-val <T : Any> MutableScope<T>.depth: Int
-    get() = generateSequence(this) { it.parent }.count() - 1
-
-val <T : Any> MutableScope<T>.parents: List<MutableScope<T>>
-    get() = generateSequence(this) { it.parent }.toList()
+val <T : Any> SymbolTable<T>.parents : List<SymbolTable<T>>
+    get() = generateSequence(this){it.parent}.toList()

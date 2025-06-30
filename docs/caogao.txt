@@ -1,2 +1,17 @@
-先把原型快速开发好
-禁止实现原生类型
+fun 函数名称<类型参数列表>[上文列表]{下文列表}(参数列表) : 返回值{
+    //函数体
+}
+fun test[
+    a : String, //声明上文参数
+    var b : Int, //声明上文变量
+    @name("add") (
+        @name("a") Int,
+        @name("b") Int
+    ) => Int, //声明上文函数fun add(a : Int,b : Int) : Int
+]
+fun String.print()
+//上面等效于下面的,调用上一样等效于
+fun print(self : String)
+//变量只能采用第一种的
+var List.name : Int
+    get = self.size

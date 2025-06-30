@@ -6,311 +6,165 @@
  */
 package compiler.semantic
 
-import compiler.parser.Body
-import tools.*
+import tools.ID
+data class ProjectAST(
+    val name : ID,
+    val files : List<FileAST>,
+) : AST
 
-/**
- * 语义分析阶段的语法树共同父类
- */
-sealed interface Tree{
-    fun asString() : String
-}
-/**
- * 语义分析阶段的文件内语法树共同父类
- * @property line 行号
- * @property column 列号
- */
-sealed interface InnerTree : Tree {
-    val line : Int
-    val column : Int
-}
-/**
- * 描述一个工程
- * @param name 工程名
- * @param files 工程文件
- */
-@Builder
-data class ProjectTree(
-    val name : ID,
-    val files : List<FileTree>
-) : Tree {
-    override fun asString() =
-        files.joinToString(
-            separator = "\n",
-            prefix = "/* 工程$name */\n"
-        )
-}
-/**
- * 描述一个文件
- * @param name 文件 名
- */
-@Builder
-data class FileTree(
-    val name : ID,
-    val tops : List<TopTree>,
-) : Tree {
-    override fun asString() =
-        tops.joinToString(
-            separator = "\n",
-            prefix = "//文件名:$name\n"
-        )
-}
-/**
- * 描述一个名称
- * @property expression 调用者表达式
- */
-@Builder
-data class NameTree(
-    override val line : Int,
-    override val column : Int,
-    val expression : ExpressionTree?,
-    val name : ID,
-    override val type : TypeTree,
-) : ExpressionTree {
-    override fun asString() : String =
-        if(expression != null)
-            "(${expression}).$name"
-        else name
-}
-/**
- * 描述一个词法作用域
- * @property stmts 作用域内的语句
- */
-@Suppress("JavaDefaultMethodsNotOverriddenByDelegation")
-@Builder
-data class BlockTree(
-    val stmts : List<StatementTree>,
-    override val line : Int,
-    override val column : Int,
-) : InnerTree,List<StatementTree> by stmts{
-    override fun asString() = TODO()
-}
-/**
- * 描述一个语句
- */
-sealed interface StatementTree : InnerTree
-/**
- * 顶层成员
- * @property name 成员名
- */
-sealed interface TopTree : StatementTree {
-    val name : ID
-    val annotations : List<AnnotationTree>
-}
-/**
- * 描述一个类,值得一提的是,相比kt的类,它更接近接口
- * @property members 成员
- */
-@Builder
-data class ClassTree(
-    override val line : Int,
-    override val column : Int,
-    override val name : ID,
-    val parents : List<TypeTree>,
+data class FileAST(
+    val name: ID,
+    val tops: List<TopAST>
+) : AST
+
+data class NameAST(
+    override val line: Int,
+    override val column: Int,
+    val expression: ExpressionAST?,
+    val name: ID,
+    override val type : TypeAST,
+) : ExpressionAST
+
+data class TypeVariableAST(
+    override val line: Int,
+    override val column: Int,
+    override val name: ID,
+    val bound: TypeAST,
+    override val annotations : List<AnnotationAST>
+) : TopAST
+
+data class ClassAST(
+    override val line  : Int,
+    override val column: Int,
+    override val name  : ID,
+    override val annotations: List<AnnotationAST>,
     val typeParameters : List<ID>,
-    val members : List<CallableTree>,
-    override val annotations : List<AnnotationTree>,
-) : TopTree {
-    override fun asString() =
-        "class $name${if(parents.isNotEmpty()) "  :" else ""} ${parents.joinToString(",")} {\n${members.joinToString("\n")}\n}"
-}
-/**
- * 可调用的成员,包括变量和函数
- * @property returnType 函数返回类型/变量类型
- */
-sealed interface CallableTree : TopTree {
-    val returnType : TypeTree?
-}
-@Builder
-data class VariableTree(
+    val parents: List<TypeAST>,
+    val members: List<CallableAST>,
+) : TopAST
+
+data class VariableAST(
+    override val line: Int,
+    override val column: Int,
+    override val name: ID,
+    override val returnType: TypeAST,
+    override val annotations: List<AnnotationAST>,
+    override val aboveContext: List<TypeAST>,
+    override val belowContext: List<TypeAST>,
+    val receiver : TypeAST?,
+    val getter: FunctionAST?,
+    val setter: FunctionAST?,
+    val value: ExpressionAST?,
+) : CallableAST
+
+data class FunctionAST(
+    override val line: Int,
+    override val returnType: TypeAST,
+    override val name: ID,
+    override val column: Int,
+    val typeParameters: List<ID>,
+    val body: BodyAST?,
+    val parameters: List<VariableAST>,
+    override val aboveContext: List<TypeAST>,
+    override val belowContext: List<TypeAST>,
+    override val annotations: List<AnnotationAST>,
+) : CallableAST
+
+data class ScopeAST(
     override val line : Int,
     override val column : Int,
-    override val name : ID,
-    val value : ExpressionTree?,
-    @Deprecated("返回类型始终不为空,因此你可以使用type而不是returnType")
-    override val returnType : TypeTree?,
-    val isMutable : Boolean,
-    override val annotations : List<AnnotationTree>,
-) : CallableTree {
-    @Suppress("DEPRECATION")
-    inline val type get() = returnType!!
-    override fun asString() =
-        "${if(isMutable) "var" else "val"} $name${returnType?.let{" : $it"} ?: ""}${value?.let{" = $value"}?:""}"
-}
-/**
- * 描述一个函数
- * @property parameters 函数参数
- * @property body 函数体
- */
-@Builder
-data class FunctionTree(
-    override val line : Int,
-    override val returnType : TypeTree,
-    override val name : ID,
-    override val column : Int,
-    val typeParameters : List<ID>,
-    val body : BlockTree?,
-    val parameters : List<VariableTree>,
-    override val annotations : List<AnnotationTree>,
-) : CallableTree {
-    override fun asString() =
-        ("fun $name(${parameters.joinToString(",")})")+
-                (returnType?.let{" : $it"} ?: "")+
-                (body?.stmts?.joinToString(
-                    prefix = "{\n",
-                    postfix = "\n}",
-                    separator = "\n"
-                )?:"")
-}
-/**
- * 描述一个表达式
- * @property type 表达式类型
- */
-sealed interface ExpressionTree : StatementTree{
-    val type : TypeTree
-}
-/**
- * 描述一个赋值语句
- * @property invoker 被调用函数的表达式
- * @property arguments 调用时传入参数
- */
-@Builder
-data class InvokeTree(
-    override val line : Int,
-    override val column : Int,
-    val invoker : ExpressionTree,
-    val arguments : List<ExpressionTree>,
-    val typeArguments : List<TypeTree>,
-    override val type : TypeTree,
-) : ExpressionTree{
-    override fun asString() =
-        "($invoker(${arguments.joinToString(",")}))"
-}
-data class AnnotationTree(
+    override val stmts : List<StatementAST>,
+) : BodyAST
+
+data class LambdaAST(
+    override val line: Int,
+    override val column: Int,
+    val parameters: List<VariableAST>,
+    val body: ScopeAST,
+    val returnType : TypeAST,
+    override val type : TypeAST,
+) : ExpressionAST
+
+data class AnnotationAST(
     override val line : Int,
     override val column : Int,
     val name : ID,
-    val arguments : ExpressionTree?
-) : InnerTree {
-    override fun asString() =
-        "@$name(${arguments?.let{""}})"
+    val arguments : ExpressionAST?,
+) : InnerAST
+
+data class InvokeAST(
+    override val line: Int,
+    override val column: Int,
+    val invoker: ExpressionAST,
+    val arguments: List<ExpressionAST>,
+    val typeArguments: List<TypeAST>,
+    override val type : TypeAST,
+) : ExpressionAST
+
+data class AssignAST(
+    override val line: Int,
+    override val column: Int,
+    val name: ExpressionAST,
+    val value: ExpressionAST,
+) : ExpressionAST {
+    override val type : TypeAST
+        get() = value.type
 }
-/**
- * 描述一个字面值常量
- * @property value 字面值
- */
-sealed interface FaceConstantTree : ExpressionTree{
-    val value : Any
-}
-/**
- * 描述一个字符串字面值
- */
-@Builder
-data class StringConstantTree(
-    override val line : Int,
-    override val column : Int,
-    override val value : String,
-    override val type : TypeTree,
-) : FaceConstantTree{
-    override fun asString() = "\"$value\""
-}
-@Builder
-data class LambdaTree(
-    override val line : Int,
-    override val column : Int,
-    val parameters : List<VariableTree>,
-    val body : BlockTree,
-    override val type : TypeTree,
-) : ExpressionTree{
-    override fun asString() = TODO()
-}
-/**
- * 描述一个数字字面值
- */
-sealed interface NumberConstantTree : FaceConstantTree
-/**
- * 描述一个整数字面值
- */
-@Builder
-data class IntegerConstantTree(
-    override val line : Int,
-    override val column : Int,
-    override val value : Int,
-    override val type : TypeTree,
-) : NumberConstantTree{
-    override fun asString() = value.toString()
-}
-/**
- * 描述一个小数字面值
- */
-@Builder
-data class DecimalConstantTree(
-    override val line : Int,
-    override val column : Int,
-    override val value : Double,
-    override val type : TypeTree,
-) : NumberConstantTree{
-    override fun asString() = value.toString()
-}
-/**
- * 描述一个类型表达式
- */
-sealed interface TypeTree : InnerTree{
-    val name : ID
-    val fullName : ID
-}
-/**
- * 描述一个平凡类型
- * @property name 类型名
- */
-@Builder
-data class CommonTypeTree(
-    override val line : Int,
-    override val column : Int,
-    override val name : ID,
-) : TypeTree{
-    override val fullName : ID
-        get() = name
-    override fun asString() = name
-}
-@Builder
-data class NullableTypeTree(
-    override val line : Int,
-    override val column : Int,
-    val type : TypeTree,
-) : TypeTree {
-    override val name : ID
-        get() = "Nullable"
-    override val fullName : ID
-        get() = "Nullable<$type>"
-    override fun asString() = "($type)?"
-}
-@Builder
-data class FunctionTypeTree(
-    override val line : Int,
-    override val column : Int,
-    val parameters : List<TypeTree>,
-    val returnType : TypeTree,
-) : TypeTree {
-    override val name : ID
-        get() = "Function" + parameters.size
-    override val fullName : ID
-        get() = if(parameters.isEmpty())
-            "Function0<$returnType>"
-        else
-            "Function${parameters.size}<${parameters.joinToString(",")},$returnType>"
-    override fun asString() =
-        "(${parameters.joinToString(",")})=>$returnType"
-}
-@Builder
-data class ApplyTypeTree(
-    override val line : Int,
-    override val column : Int,
-    override val name : ID,
-    val arguments : List<TypeTree>
-) : TypeTree {
-    override val fullName : ID
-        get() = "$name<${arguments.joinToString(",")}>"
-    override fun asString() =
-        "$name<${arguments.joinToString(",")}>"
-}
+
+data class StringConstantAST(
+    override val line: Int,
+    override val column: Int,
+    override val value: String,
+    override val type : TypeAST,
+) : FaceConstantAST
+
+data class IntegerConstantAST(
+    override val line: Int,
+    override val column: Int,
+    override val value: Int,
+    override val type : TypeAST,
+) : NumberConstantAST
+
+data class DecimalConstantAST(
+    override val line: Int,
+    override val column: Int,
+    override val value: Double,
+    override val type : TypeAST,
+) : NumberConstantAST
+
+data class CommonTypeAST(
+    override val line: Int,
+    override val column: Int,
+    val name: ID,
+    override val annotations : List<AnnotationAST>,
+) : TypeAST
+
+data class NullableTypeAST(
+    override val line: Int,
+    override val column: Int,
+    val type: TypeAST,
+    override val annotations : List<AnnotationAST>,
+) : TypeAST
+
+data class TupleTypeAST(
+    override val line: Int,
+    override val column: Int,
+    val arguments: List<TypeAST>,
+    override val annotations : List<AnnotationAST>,
+) : TypeAST
+
+data class FunctionTypeAST(
+    override val line: Int,
+    override val column: Int,
+    val parameters: List<TypeAST>,
+    val returnType: TypeAST,
+    override val annotations : List<AnnotationAST>,
+) : TypeAST
+
+data class ApplyTypeAST(
+    override val line: Int,
+    override val column: Int,
+    val name: ID,
+    val arguments: List<TypeAST>,
+    override val annotations : List<AnnotationAST>,
+) : TypeAST

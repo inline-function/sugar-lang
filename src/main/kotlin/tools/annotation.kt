@@ -18,10 +18,3 @@ import kotlin.reflect.KClass
 annotation class SideEffect(
     val about : String = ""
 )
-/**
- * 该注解为类自动生成构建器模板代码
- */
-@Retention(SOURCE)
-@Target(CLASS)
-@DslMarker
-annotation class Builder

@@ -38,24 +38,8 @@ operator fun Int.times(s: String) =
 @SideEffect
 inline fun exception(message: String) : Nothing =
     throw Exception(message)
-/**
- * 省略if
- * @receiver 条件
- * @param then 条件为真时的执行体
- * @return 条件为真时返回then的执行结果，否则返回null
- */
-inline operator fun <R> Boolean.invoke(then : ()->R) =
-    if (this) then() else null
-/**
- * 省略if
- * @receiver 条件
- * @param then 条件为真时的执行体
- * @return 条件为真时返回then的执行结果，否则返回else的执行结果
- */
-inline operator fun <R> Boolean.invoke(then : ()->R,`else` : ()->R) =
-    if (this) then() else `else`()
-@Suppress("UNCHECKED_CAST")
-fun <R> Any?.cast() : R = this as R
-@Suppress("UNCHECKED_CAST")
-fun <R> Any?.safeCast() : R? = this as? R
-inline fun <T> T?.nullThen(block : (T?)->T & Any) : T & Any = this ?: block(this)
+fun <A,R> context(a : A,block : context(A) (A)->R) : R = with(a) { block(a) }
+fun <A,B,R> context(a : A,b : B,block : context(A,B) (A,B)->R) : R = with(a) { with(b) { block(a,b) } }
+fun <A,B,C,R> context(a : A,b : B,c : C,block : context(A,B,C) (A,B,C)->R) : R = with(a) { with(b) { with(c) { block(a,b,c) } } }
+fun <A,B,C,D,R> context(a : A,b : B,c : C,d : D,block : context(A,B,C,D) (A,B,C,D)->R) : R = with(a) { with(b) { with(c) { with(d) { block(a,b,c,d) } } } }
+fun <A,B,C,D,E,R> context(a : A,b : B,c : C,d : D,e : E,block : context(A,B,C,D,E) (A,B,C,D,E)->R) : R = with(a) { with(b) { with(c) { with(d) { with(e) { block(a,b,c,d,e) } } } } }

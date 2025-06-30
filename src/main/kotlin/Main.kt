@@ -1,10 +1,10 @@
-import compiler.antlr.toSugarTree
 import compiler.kotlin.generateKotlinProject
-import compiler.semantic.Annotation
-import compiler.semantic.AnnotationProcessor
-import compiler.semantic.AnnotationValue
-import compiler.semantic.ProjectTree
-import compiler.semantic.semanticAnalysis
+import compiler.parser.toSugarTree
+//import compiler.kotlin.generateKotlinProject
+//import compiler.semantic.Annotation
+//import compiler.semantic.AnnotationProcessor
+//import compiler.semantic.AnnotationValue
+import compiler.semantic.transform
 import tools.SideEffect
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -16,6 +16,9 @@ import java.nio.file.Paths
  * @see SideEffect
  * @author 语法糖味函子酱(sugared functor)
  */
+@SideEffect
+@JvmName("time0")
+inline infix fun Int.time(action : (Int)->Unit) = time(this,action)
 @SideEffect
 inline fun time(times : Int = 1,action : (Int)->Unit){
     println("-------------开始执行-------------")
@@ -29,18 +32,16 @@ inline fun time(times : Int = 1,action : (Int)->Unit){
  * @see SideEffect
  */
 @SideEffect
-fun main() = time{
+fun main() = 1 time {
     val path = "F:/JavaProjrct/sugerLang/docs/build"
     """
-        |@jvm_function("sugar.Core:println")
+        |@jvm_name("println")
         |fun print(text : Str)
         |fun main() {
-        |    /*
-        |    val lambda : (Int)=>Int = { a =>
-        |       a
-        |    }
-        |    */
-        |    print("Hello,World!")
+        |    mut var str = "Hello,World!"
+        |    print(str)
+        |    str = "Fuck You,World!"
+        |    print(str)
         |}
     """
         .trimMargin()
@@ -52,19 +53,19 @@ fun main() = time{
                 ).toSugarTree(fileName = "core").files
             )
         }
-        .semanticAnalysis(annotations,apts)
+        .transform(/* annotations,apts */)
         .apply {
-            println("语义分析后的抽象语法树 : $first\n语义分析信息:\n$second\n生成kotlin项目至 : $path")
+            println("语义分析后的抽象语法树 : $second\n语义分析信息:\n$first\n生成kotlin项目至 : $path")
         }
-        .first
+        .second
         .generateKotlinProject(path)
 //        .apply {
 //            println("IR:\n$this")
 //        }
 //        .run { VirtualMachine.start(this) }
 }
-val annotations = listOf(
-    Annotation("jvm_function",AnnotationValue.STR),
-    Annotation("mut"),
-)
-val apts : List<AnnotationProcessor> = emptyList()
+//val annotations = listOf(
+//    Annotation("jvm_function",AnnotationValue.STR),
+//    Annotation("mut"),
+//)
+//val apts : List<AnnotationProcessor> = emptyList()
