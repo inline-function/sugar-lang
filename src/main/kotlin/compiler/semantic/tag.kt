@@ -9,7 +9,7 @@ typealias ResultBuilder<T> = context(MutableInformation,SymbolTable<Tag>) ()->T
 sealed interface Tag {
     val name : ID
 }
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun Tag(tree : TopTree) : Pair<Tag,ResultBuilder<TopAST>> = when(tree){
     is FunctionTree     -> FunctionTag(tree)
     is VariableTree     -> VariableTag(tree)
@@ -23,7 +23,7 @@ sealed interface CallableTag : Tag {
     val belowContext: List<TypeAST>
     val annotations: List<AnnotationAST>
 }
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun CallableTag(callable : CallableTree) = when(callable){
     is FunctionTree -> FunctionTag(callable)
     is VariableTree -> VariableTag(callable)
@@ -33,7 +33,7 @@ interface VariableTag : CallableTag {
     val getter: FunctionTag?
     val setter: FunctionTag?
 }
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun VariableTag(variable : VariableTree) : Pair<VariableTag,ResultBuilder<VariableAST>> =
     object : VariableTag {
         override val receiver : TypeAST?
@@ -53,7 +53,7 @@ fun VariableTag(variable : VariableTree) : Pair<VariableTag,ResultBuilder<Variab
         override val annotations : List<AnnotationAST>
             get() = variable.annotations.map { it.transform() }
     } to { variable.transform() }
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun VariableTag(variable : VariableAST) : Pair<VariableTag,ResultBuilder<VariableAST>> =
     object : VariableTag {
         override val receiver : TypeAST?
@@ -74,10 +74,10 @@ fun VariableTag(variable : VariableAST) : Pair<VariableTag,ResultBuilder<Variabl
             get() = variable.annotations
     } to { variable }
 interface FunctionTag : CallableTag {
-    val typeParameters: List<ID>
+    val typeParameters: List<TypeVariableAST>
     val parameters: List<VariableTag>
 }
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun FunctionTag(function : FunctionTree) : Pair<FunctionTag,ResultBuilder<FunctionAST>> =
     object : FunctionTag {
         override val returnType : TypeAST?
@@ -90,15 +90,15 @@ fun FunctionTag(function : FunctionTree) : Pair<FunctionTag,ResultBuilder<Functi
             get() = function.belowContext.map { it.transform() }
         override val annotations : List<AnnotationAST>
             get() = function.annotations.map { it.transform() }
-        override val typeParameters : List<ID>
-            get() = function.typeParameters
+        override val typeParameters : List<TypeVariableAST>
+            get() = function.typeParameters.map { it.transform() }
         override val parameters : List<VariableTag>
             get() = function.parameters.map { VariableTag(it).first }
     } to { function.transform() }
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun FunctionTag(function : FunctionAST) : Pair<FunctionTag,ResultBuilder<FunctionAST>> =
     object : FunctionTag {
-        override val typeParameters : List<ID>
+        override val typeParameters : List<TypeVariableAST>
             get() = function.typeParameters
         override val parameters : List<VariableTag>
             get() = function.parameters.map { VariableTag(it).first }
@@ -116,19 +116,19 @@ fun FunctionTag(function : FunctionAST) : Pair<FunctionTag,ResultBuilder<Functio
 interface ClassTag : Tag {
     override val name: ID
     val annotations: List<AnnotationAST>
-    val typeParameters: List<ID>
+    val typeParameters: List<TypeVariableAST>
     val parents: List<TypeAST>
     val members: List<CallableTag>
 }
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun ClassTag(`class` : ClassTree) : Pair<ClassTag,ResultBuilder<ClassAST>> =
     object : ClassTag {
         override val name : ID
             get() = `class`.name
         override val annotations : List<AnnotationAST>
             get() = `class`.annotations.map { it.transform() }
-        override val typeParameters : List<ID>
-            get() = `class`.typeParameters
+        override val typeParameters : List<TypeVariableAST>
+            get() = `class`.typeParameters.map { it.transform() }
         override val parents : List<TypeAST>
             get() = `class`.parents.map { it.transform() }
         override val members : List<CallableTag>
@@ -139,14 +139,14 @@ fun ClassTag(`class` : ClassTree) : Pair<ClassTag,ResultBuilder<ClassAST>> =
                 }
             }
     } to { `class`.transform() }
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun ClassTag(`class` : ClassAST) : Pair<ClassTag,ResultBuilder<ClassAST>> =
     object : ClassTag {
         override val name : ID
             get() = `class`.name
         override val annotations : List<AnnotationAST>
             get() = `class`.annotations
-        override val typeParameters : List<ID>
+        override val typeParameters : List<TypeVariableAST>
             get() = `class`.typeParameters
         override val parents : List<TypeAST>
             get() = `class`.parents
@@ -160,6 +160,21 @@ fun ClassTag(`class` : ClassAST) : Pair<ClassTag,ResultBuilder<ClassAST>> =
     } to { `class` }
 interface TypeVarTag : Tag {
     override val name : ID
+    val bound : TypeAST?
+}
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
+fun TypeVarTag(typeVar : TypeVariableTree) = object : TypeVarTag {
+    override val name : ID
+        get() = typeVar.name
+    override val bound : TypeAST?
+        get() = typeVar.bound?.transform()
+}
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
+fun TypeVarTag(typeVar : TypeVariableAST) = object : TypeVarTag {
+    override val name : ID
+        get() = typeVar.name
+    override val bound : TypeAST?
+        get() = typeVar.bound
 }
 interface ContextTag : Tag {
     val type : TypeTree

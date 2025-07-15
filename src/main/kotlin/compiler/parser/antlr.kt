@@ -203,8 +203,16 @@ fun ParameterContext.toSugarTree() = VariableTree(
     setter = null,
     value = expr()?.toSugarTree(),
 )
-fun TypeParamListContext.toSugarTree() : List<ID> =
-    ID().map { it.text }
+fun TypeParamListContext.toSugarTree() : List<TypeVariableTree> =
+    typeParam().map {
+        TypeVariableTree(
+            line = it.line,
+            column = it.column,
+            name = it.ID().text,
+            bound = it.type()?.toSugarTree(),
+            annotations = it.modifier()?.toSugarTree() ?: emptyList(),
+        )
+    }
 fun BodyContext.toSugarTree() = ScopeTree(
     line = line,
     column = column,
@@ -266,15 +274,6 @@ fun ExprContext.toSugarTree() : ExpressionTree = (
         )
     }
 ).let {
-    name()?.run {
-        NameTree(
-            line = line,
-            column = column,
-            expression = it,
-            name = ID().text,
-        )
-    } ?: it
-}.let {
     invoke()?.run {
         InvokeTree(
             line = line,
@@ -282,6 +281,15 @@ fun ExprContext.toSugarTree() : ExpressionTree = (
             invoker = it,
             arguments = expr().map { it.toSugarTree() },
             typeArguments = typeArgList()?.type()?.map { it.toSugarTree() } ?: emptyList()
+        )
+    } ?: it
+}.let {
+    name()?.run {
+        NameTree(
+            line = line,
+            column = column,
+            expression = it,
+            name = ID().text,
         )
     } ?: it
 }.let {

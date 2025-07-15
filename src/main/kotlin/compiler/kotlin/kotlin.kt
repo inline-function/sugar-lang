@@ -5,6 +5,7 @@ package compiler.kotlin
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import compiler.semantic.*
+import org.jetbrains.kotlin.utils.addToStdlib.assertedCast
 import tools.SideEffect
 import java.io.File
 import java.io.FileOutputStream
@@ -12,7 +13,7 @@ import kotlin.collections.forEach
 
 context(nameMap : NameMap)
 fun ClassAST.check() = when(name) {
-    int,dec,str,unit -> null
+    int,dec,str,unit,function -> null
     else if Regex("Function\\d+").matches(name) -> null
     else -> this
 }
@@ -71,10 +72,32 @@ fun FunctionAST.toKotlinCode() = FunSpec
                 )
             )
         }
+    }.let {
+        typeParameters.fold(it) { it,ast ->
+            it.addTypeVariable(ast.toKotlinCode())
+        }
     }
-    .addCode(body?.stmts?.joinToString("\n") { it.toKotlinCode() } ?: "")
+    .addCode(body?.stmts?.dropLast(1)?.joinToString("\n") { it.toKotlinCode() } ?: "")
+    .let {
+        body?.stmts
+            ?.lastOrNull()
+            ?.run {
+                it.addStatement(
+                    "${if(returnType is CommonTypeAST && returnType.name == unit)
+                        "\n"
+                    else
+                        "\nreturn "
+                    }${toKotlinCode()}"
+                )
+            } ?: it
+    }
     .returns(returnType.toKotlinCode())
     .build()
+context(nameMap : NameMap)
+fun TypeVariableAST.toKotlinCode() = TypeVariableName(
+    name = name,
+    bounds = listOf(bound.toKotlinCode())
+)
 context(nameMap : NameMap)
 fun VariableAST.toKotlinCode() = PropertySpec
     .builder(
@@ -110,7 +133,7 @@ fun ExpressionAST.toKotlinCode() : String = when(this) {
     is IntegerConstantAST -> value
     is StringConstantAST  -> "\"$value\""
     is InvokeAST          -> "(${invoker.toKotlinCode()}(${arguments.joinToString(",") { it.toKotlinCode() }}))"
-    is LambdaAST          -> "${parameters.joinToString(",") { "${it.name} : ${it.returnType.toKotlinCode()}" }} -> {\n${body.stmts.joinToString("\n") { it.toKotlinCode() }}\n}"
+    is LambdaAST          -> "{${parameters.joinToString(",") { "${it.name} : ${it.returnType.toKotlinCode()}" }} -> \n${body.stmts.joinToString("\n") { it.toKotlinCode() }}\n}"
     is NameAST            -> name.fvid
     is AssignAST          -> "${name.toKotlinCode()} = ${value.toKotlinCode()}"
 }.toString()

@@ -10,7 +10,7 @@ INT     :   [0-9]+ ;
 DEC     :   [0-9]+ '.' [0-9]+ ;
 STRING  :   '"' (ESC | ~["\\])* '"' ;
 ID      :   ([\p{L}+] | DIGIT | '_' | '$')+ | ('_' | '$' | '`' | '#' | '%' | '&' | '@' | '*' | '+' | '-' | '~' | '/' | ':' | '.' | '<' | '>' | '?' | '\\' | '^' | '|' | '=' | '!' | '\'' | ',')+ ;
-WS      :   (([ \t]+) | ('//' (NL+ | EOF) )| ('/*' .*? '*/')) -> skip ;
+WS      :   (([ \t]+) | ('//' (('\n' | '\r' | '\r\n') | EOF) )| ('/*' .*? '*/')) -> skip ;
 fragment LETTER
         :   [a-zA-Z] ;
 fragment DIGIT
@@ -35,11 +35,13 @@ top : variable | function | class;
 //子程序体
 body : ('{' NL? stmt (NL stmt)* NL? '}') | ('{' NL? '}');
 //泛型列表声明
-typeParamList : '<' NL? ID ( NL? ',' NL? ID)* '>';
+typeParamList : '<' NL? typeParam ( NL? ',' NL? typeParam)* NL? '>';
+//类型参数
+typeParam : modifier? ID (':' type)?;
 //上文列表声明
-aboveList : '[' NL? type ( NL? ',' NL? type)* ']';
+aboveList : '[' NL? type ( NL? ',' NL? type)* NL? ']';
 //下文列表声明
-belowList : '{' NL? type ( NL? ',' NL? type)* '}';
+belowList : '{' NL? type ( NL? ',' NL? type)* NL? '}';
 //接收者
 receiver : type '.';
 //修改器

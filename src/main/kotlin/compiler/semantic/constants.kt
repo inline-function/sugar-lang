@@ -8,6 +8,7 @@ const val unit = "Unit"
 const val dec = "Dec"
 const val int = "Int"
 const val str = "Str"
+const val any = "Any"
 val InnerTree.Unit
     get() = CommonTypeAST(
         line = line,
@@ -34,5 +35,12 @@ val InnerTree.Str
         line = line,
         column = column,
         name = str,
+        annotations = emptyList()
+    )
+val InnerTree.Any
+    get() = CommonTypeAST(
+        line = line,
+        column = column,
+        name = any,
         annotations = emptyList()
     )

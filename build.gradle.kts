@@ -13,6 +13,7 @@ version = "1.0-SNAPSHOT"
 repositories {
     mavenCentral()
 }
+
 val generateKotlinGrammarSource = tasks.register<AntlrKotlinTask>("generateKotlinGrammarSource") {
     dependsOn("cleanGenerateKotlinGrammarSource")
     source = fileTree(layout.projectDirectory.dir("antlr")) {
@@ -53,8 +54,9 @@ tasks.withType<KotlinCompile>().configureEach {
         freeCompilerArgs.addAll(
             "-opt-in=kotlin.RequiresOptIn",
             "-Xcontext-parameters",
+            "-Xnon-local-break-continue",
             "-Xwhen-guards",
-            "-Xmulti-dollar-interpolation",
+            "-Xmulti-dollar-interpolation"
         )
     }
 }

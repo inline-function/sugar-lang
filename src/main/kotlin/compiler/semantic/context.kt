@@ -60,6 +60,12 @@ data class MutableInformation(
         is Warning    -> warnings += exception
         is Error      -> errors += exception
     }
+    operator fun plusAssign(exception : MutableInformation) {
+        suggestions += exception.suggestions
+        hints += exception.hints
+        warnings += exception.warnings
+        errors += exception.errors
+    }
 }
 val MutableInformation.result : Information
     get() = Information(suggestions.toList(), hints.toList(), warnings.toList(), errors.toList())

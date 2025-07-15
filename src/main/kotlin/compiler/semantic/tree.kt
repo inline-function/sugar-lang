@@ -6,6 +6,9 @@
  */
 package compiler.semantic
 
+import compiler.parser.AnnotationTree
+import compiler.parser.TopTree
+import compiler.parser.TypeTree
 import tools.ID
 data class ProjectAST(
     val name : ID,
@@ -38,7 +41,7 @@ data class ClassAST(
     override val column: Int,
     override val name  : ID,
     override val annotations: List<AnnotationAST>,
-    val typeParameters : List<ID>,
+    val typeParameters : List<TypeVariableAST>,
     val parents: List<TypeAST>,
     val members: List<CallableAST>,
 ) : TopAST
@@ -62,7 +65,7 @@ data class FunctionAST(
     override val returnType: TypeAST,
     override val name: ID,
     override val column: Int,
-    val typeParameters: List<ID>,
+    val typeParameters: List<TypeVariableAST>,
     val body: BodyAST?,
     val parameters: List<VariableAST>,
     override val aboveContext: List<TypeAST>,
@@ -104,7 +107,7 @@ data class InvokeAST(
 data class AssignAST(
     override val line: Int,
     override val column: Int,
-    val name: ExpressionAST,
+    val name: NameAST,
     val value: ExpressionAST,
 ) : ExpressionAST {
     override val type : TypeAST
@@ -137,21 +140,27 @@ data class CommonTypeAST(
     override val column: Int,
     val name: ID,
     override val annotations : List<AnnotationAST>,
-) : TypeAST
+) : TypeAST {
+    override fun toString() = name
+}
 
 data class NullableTypeAST(
     override val line: Int,
     override val column: Int,
     val type: TypeAST,
     override val annotations : List<AnnotationAST>,
-) : TypeAST
+) : TypeAST {
+    override fun toString() = "($type)?"
+}
 
 data class TupleTypeAST(
     override val line: Int,
     override val column: Int,
     val arguments: List<TypeAST>,
     override val annotations : List<AnnotationAST>,
-) : TypeAST
+) : TypeAST {
+    override fun toString() = "(${arguments.joinToString(",")})"
+}
 
 data class FunctionTypeAST(
     override val line: Int,
@@ -159,7 +168,10 @@ data class FunctionTypeAST(
     val parameters: List<TypeAST>,
     val returnType: TypeAST,
     override val annotations : List<AnnotationAST>,
-) : TypeAST
+    val typeParameters : List<TypeVariableAST> = emptyList(),
+) : TypeAST {
+    override fun toString() = "(${parameters.joinToString(",")}) => $returnType"
+}
 
 data class ApplyTypeAST(
     override val line: Int,
@@ -167,4 +179,6 @@ data class ApplyTypeAST(
     val name: ID,
     val arguments: List<TypeAST>,
     override val annotations : List<AnnotationAST>,
-) : TypeAST
+) : TypeAST {
+    override fun toString() = "$name<${arguments.joinToString(",")}>"
+}

@@ -1,7 +1,7 @@
 @file:Suppress("unused","ClassName","NonAsciiCharacters","PropertyName","LocalVariableName","FunctionName","SpellCheckingInspection","UnusedReceiverParameter","CAST_NEVER_SUCCEEDS")
-@JvmField
-val i = "" as Int
-fun main() {
-    val i = "" as Int
+//例子：具有类型参数的函数
+fun <T> self(arg : T) : T = arg
+object lambda {
+    operator fun <T> invoke(arg : T) : T = arg
 }
-main()
+lambda(1)

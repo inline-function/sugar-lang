@@ -4,15 +4,42 @@ package compiler.semantic
 
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 val CommonTypeAST.definition : ClassTag?
-    get() = symbols.parents.flatMap { it.symbols }.find { it is ClassTag && it.name == name } as ClassTag?
+    get() = symbols.parents
+        .flatMap { it.symbols }
+        .find { it is ClassTag && it.name == name }
+        .let { it as? ClassTag }
+        ?: symbols.parents
+            .flatMap { it }
+            .find { it is TypeVarTag && it.name == name }
+            .let { (it as? TypeVarTag)?.bound as? ClassTag }
 
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 val TupleTypeAST.definition : ClassTag?
-    get() = symbols.parents.flatMap { it.symbols }.find { it is ClassTag && it.name == "${tuple}${arguments.size}" } as ClassTag?
+    get() = symbols.parents
+        .flatMap { it.symbols }
+        .find { it is ClassTag && it.name == "${tuple}${arguments.size}" }
+        .let { it as? ClassTag }
+        ?.let {
+            val typeVars = (it.typeParameters zip arguments).toMap()
+            object : ClassTag by it {
+                override val parents : List<TypeAST> = it.parents.map { it.specialization(typeVars) }
+                override val members : List<CallableTag> = it.members.map { it.specialization(typeVars) }
+            }
+        }
 
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 val FunctionTypeAST.definition : ClassTag?
-    get() = symbols.parents.flatMap { it.symbols }.find { it is ClassTag && it.name == "${function}${parameters.size}" } as ClassTag?
+    get() = symbols.parents
+        .flatMap { it.symbols }
+        .find { it is ClassTag && it.name == "${function}${parameters.size}" }
+        .let { it as? ClassTag }
+        ?.let {
+            val typeVars = (it.typeParameters zip (parameters + returnType)).toMap()
+            object : ClassTag by it {
+                override val parents : List<TypeAST> = it.parents.map { it.specialization(typeVars) }
+                override val members : List<CallableTag> = it.members.map { it.specialization(typeVars) }
+            }
+        }
 
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 val NullableTypeAST.definition : ClassTag?
@@ -20,8 +47,17 @@ val NullableTypeAST.definition : ClassTag?
 
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 val ApplyTypeAST.definition : ClassTag?
-    get() = symbols.parents.flatMap { it.symbols }.find { it is ClassTag && it.name == name } as ClassTag?
-
+    get() = symbols.parents
+        .flatMap { it.symbols }
+        .find { it is ClassTag && it.name == name }
+        .let { it as? ClassTag }
+        ?.let {
+            val typeVars = (it.typeParameters zip arguments).toMap()
+            object : ClassTag by it {
+                override val parents : List<TypeAST> = it.parents.map { it.specialization(typeVars) }
+                override val members : List<CallableTag> = it.members.map { it.specialization(typeVars) }
+            }
+        }
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 val TypeAST.definition : ClassTag?
     get() = when(this){
@@ -31,28 +67,139 @@ val TypeAST.definition : ClassTag?
         is NullableTypeAST -> definition
         is TupleTypeAST    -> definition
     }
+//TODO:支持高阶类型
+fun TypeAST.specialization(typeVars : Map<TypeVariableAST,TypeAST>) : TypeAST = when(this){
+    is ApplyTypeAST    -> copy(arguments = arguments.map { it.specialization(typeVars) })
+    is CommonTypeAST   -> takeUnless { it.name in typeVars.keys.map { it.name } } ?: typeVars.toList().find { (k,_) -> k.name == name }!!.second
+    is FunctionTypeAST -> copy(parameters = parameters.map { it.specialization(typeVars) },returnType = returnType.specialization(typeVars))
+    is NullableTypeAST -> copy(type = type.specialization(typeVars))
+    is TupleTypeAST    -> copy(arguments = arguments.map { it.specialization(typeVars) })
+}
+fun CallableTag.specialization(typeVars : Map<TypeVariableAST,TypeAST>) : CallableTag = when(this){
+    is FunctionTag -> typeVars
+        .filter { it.key !in typeParameters }
+        .let { typeVars ->
+            object : FunctionTag by this {
+                override val returnType : TypeAST? = this@specialization.returnType?.specialization(typeVars)
+                override val parameters : List<VariableTag> = this@specialization.parameters.map {
+                    object : VariableTag by it {
+                        override val returnType : TypeAST? = it.returnType?.specialization(typeVars)
+                    }
+                }
+            }
+        }
+    is VariableTag -> this
+}
 val FunctionAST.asVariableType : FunctionTypeAST
     get() = FunctionTypeAST(
         line = line,
         column = column,
         parameters = parameters.map { it.returnType },
         returnType = returnType,
-        annotations = annotations
+        annotations = annotations,
     )
+/*
+TODO 暂时放弃泛型推导,只支持显式指定
+具有如下规则:
+T = Str  =>  T : Str
+Out<T> = Out<Str>  =>  T : Str
+In<T> = In<Str>  =>  Str : T
+Mut<T> = Mut<Str>  =>  T = Str
+ */
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
-infix fun TypeAST.isCastableTo(type : TypeAST) : Boolean = try {
-    when {
-        //如果接收者是参数本身,可以转换
-        this == type                                           -> true
-        //如果接收者是可空类型且接收者的非空版本可以转换为参数,可以转换
-        this is NullableTypeAST && this.type isCastableTo type -> true
-        //如果参数是接收者的父类,可以转换
-        type in definition!!.parents                           -> true
-        //其他情况不可以转换 TODO 添加形变
-        else                                                   -> false
+fun FunctionTag.solve(types : List<TypeAST?>) : FunctionTag {
+    //收集每个类型参数的约束
+    val constraints : Map<TypeVariableAST,List<ClassTag.()->Boolean>> = typeParameters
+        .associateWith { typeVariable ->
+            buildList {
+                //类型必须符合边界约束
+                add { asType isCastableTo typeVariable.bound }
+                //直接约束
+                types
+                    .filterIsInstance<CommonTypeAST>()
+                    .filter { it.name == typeVariable.name }
+                    .forEach { add { asType isCastableTo it } }
+                /*
+                //判断是否引用了类型变量
+                fun isUsingTypeVariable(type : TypeAST) : Boolean = when(type){
+                    is ApplyTypeAST    -> type.arguments.any { isUsingTypeVariable(it) }
+                    is CommonTypeAST   -> type.name == typeVariable.name
+                    is FunctionTypeAST -> type.parameters.any { isUsingTypeVariable(it) } || isUsingTypeVariable(type.returnType)
+                    is NullableTypeAST -> isUsingTypeVariable(type.type)
+                    is TupleTypeAST    -> type.arguments.any { isUsingTypeVariable(it) }
+                }
+                //求与类型实参有关的类型形参
+                fun ApplyTypeAST.definition() : TypeVariableAST = definition!!.typeParameters[arguments.indexOfFirst { isUsingTypeVariable(it) }]
+                //TODO 化简约束 List<List<T>> List<List<Int>> List<T> TList
+                tailrec fun simplify(supertype : TypeAST, subtype : TypeAST) : TypeAST = when(supertype){
+                    is ApplyTypeAST if supertype.definition().isCovariant     -> simplify(
+                        supertype.arguments.first { isUsingTypeVariable(it) },
+                        when(subtype){
+                            is ApplyTypeAST    -> TODO()
+                            is CommonTypeAST   -> TODO()
+                            is FunctionTypeAST -> TODO()
+                            is NullableTypeAST -> TODO()
+                            is TupleTypeAST    -> TODO()
+                        }
+                    )
+                    is ApplyTypeAST if supertype.definition().isContravariant -> TODO()
+                    is ApplyTypeAST    -> TODO()
+                    is CommonTypeAST   -> subtype
+                    is FunctionTypeAST -> TODO()
+                    is NullableTypeAST -> TODO()
+                    is TupleTypeAST    -> TODO()
+                }
+                //间接约束
+                types
+                    .filterNot { it is CommonTypeAST }
+                    .filter { isUsingTypeVariable(it) }
+                    .forEach { add { asType isCastableTo it } }
+                 */
+            }
+        }
+    //求解
+    val results = constraints.map { (typeVariable, constraints) ->
+        typeVariable to symbols.parents
+            .flatMap { it }
+            .filterIsInstance<ClassTag>()
+            .find { constraints.fold(true) { acc, constraint -> acc && it.constraint() } }
+    }.toMap()
+    //构造函数标签
+    return object : FunctionTag by this {
+        override val parameters : List<VariableTag>
+            get() = TODO("Not yet implemented")
+        override val returnType : TypeAST?
+            get() = TODO("Not yet implemented")
     }
-} catch(_ : Throwable) {
-    throw RuntimeException("$this")
+}
+//协变
+val TypeVariableAST.isCovariant : Boolean
+    get() = annotations.any { it.name == "out" }
+//逆变
+val TypeVariableAST.isContravariant : Boolean
+    get() = annotations.any { it.name == "in" }
+//不变
+val TypeVariableAST.isInvariant : Boolean
+    get() = (!isCovariant) && (!isContravariant)
+val ClassTag.asType : TypeAST
+    get() = when { //TODO
+        else -> CommonTypeAST(
+            line = -1,
+            column = -1,
+            name = name,
+            annotations = emptyList()
+        )
+    }
+context(info : MutableInformation,symbols : SymbolTable<Tag>)
+infix fun TypeAST.isCastableTo(type : TypeAST) : Boolean = when {
+    //如果接收者是参数本身,可以转换
+    this % type                                            -> true
+    //如果接收者是可空类型且接收者的非空版本可以转换为参数,可以转换
+    this is NullableTypeAST && this.type isCastableTo type -> true
+    //如果参数是接收者的父类,可以转换
+    type in definition!!.parents                           -> true
+    //其他情况不可以转换 TODO 添加形变
+    else                                                   -> false
 }
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 @Suppress("NOTHING_TO_INLINE")

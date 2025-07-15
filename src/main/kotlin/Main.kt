@@ -34,16 +34,9 @@ inline fun time(times : Int = 1,action : (Int)->Unit){
 @SideEffect
 fun main() = 1 time {
     val path = "F:/JavaProjrct/sugerLang/docs/build"
-    """
-        |@jvm_name("println")
-        |fun print(text : Str)
-        |fun main() {
-        |    mut var str = "Hello,World!"
-        |    print(str)
-        |    str = "Fuck You,World!"
-        |    print(str)
-        |}
-    """
+    Files.readString(
+        Paths.get("F:\\JavaProjrct\\sugerLang\\core\\main.bst")
+    )
         .trimMargin()
         .toSugarTree(showTree = true,fileName = "main")
         .run {
@@ -55,9 +48,9 @@ fun main() = 1 time {
         }
         .transform(/* annotations,apts */)
         .apply {
-            println("语义分析后的抽象语法树 : $second\n语义分析信息:\n$first\n生成kotlin项目至 : $path")
+            println("语义分析后的抽象语法树 : $first\n语义分析信息:\n$second\n生成kotlin项目至 : $path")
         }
-        .second
+        .first
         .generateKotlinProject(path)
 //        .apply {
 //            println("IR:\n$this")

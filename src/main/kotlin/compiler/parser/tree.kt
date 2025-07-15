@@ -1,5 +1,6 @@
 package compiler.parser
 import tools.ID
+import java.util.Objects
 
 data class ProjectTree(
     val name : ID,
@@ -22,7 +23,7 @@ data class TypeVariableTree(
     override val line: Int,
     override val column: Int,
     override val name: ID,
-    val bound: TypeTree,
+    val bound: TypeTree?,
     override val annotations : List<AnnotationTree>
 ) : TopTree
 
@@ -31,7 +32,7 @@ data class ClassTree(
     override val column: Int,
     override val name  : ID,
     override val annotations: List<AnnotationTree>,
-    val typeParameters : List<ID>,
+    val typeParameters : List<TypeVariableTree>,
     val parents: List<TypeTree>,
     val members: List<CallableTree>,
 ) : TopTree
@@ -62,7 +63,7 @@ data class FunctionTree(
     override val returnType: TypeTree?,
     override val name: ID,
     override val column: Int,
-    val typeParameters: List<ID>,
+    val typeParameters: List<TypeVariableTree>,
     val body: BodyTree?,
     val parameters: List<VariableTree>,
     override val aboveContext: List<TypeTree>,
@@ -121,21 +122,36 @@ data class CommonTypeTree(
     override val column: Int,
     val name: ID,
     override val annotations : List<AnnotationTree>,
-) : TypeTree
+) : TypeTree {
+    override fun equals(other : Any?) =
+        other is CommonTypeTree &&
+        name == other.name &&
+        annotations == other.annotations
+}
 
 data class NullableTypeTree(
     override val line: Int,
     override val column: Int,
     val type: TypeTree,
     override val annotations : List<AnnotationTree>,
-) : TypeTree
+) : TypeTree {
+    override fun equals(other : Any?) =
+        other is NullableTypeTree &&
+        type == other.type &&
+        annotations == other.annotations
+}
 
 data class TupleTypeTree(
     override val line: Int,
     override val column: Int,
     val arguments: List<TypeTree>,
     override val annotations : List<AnnotationTree>,
-) : TypeTree
+) : TypeTree {
+    override fun equals(other : Any?) =
+        other is TupleTypeTree &&
+        arguments == other.arguments &&
+        annotations == other.annotations
+}
 
 data class FunctionTypeTree(
     override val line: Int,
@@ -144,7 +160,6 @@ data class FunctionTypeTree(
     val returnType: TypeTree,
     override val annotations : List<AnnotationTree>,
 ) : TypeTree
-
 data class ApplyTypeTree(
     override val line: Int,
     override val column: Int,
