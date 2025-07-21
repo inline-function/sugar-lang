@@ -2,6 +2,8 @@
 
 package compiler.semantic
 
+import compiler.semantic.Any
+import tools.zip
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 val CommonTypeAST.definition : ClassTag?
     get() = symbols.parents
@@ -68,7 +70,16 @@ val TypeAST.definition : ClassTag?
         is TupleTypeAST    -> definition
     }
 //TODO:支持高阶类型
+@JvmName("s1")
 fun TypeAST.specialization(typeVars : Map<TypeVariableAST,TypeAST>) : TypeAST = when(this){
+    is ApplyTypeAST    -> copy(arguments = arguments.map { it.specialization(typeVars) })
+    is CommonTypeAST   -> takeUnless { it.name in typeVars.keys.map { it.name } } ?: typeVars.toList().find { (k,_) -> k.name == name }!!.second
+    is FunctionTypeAST -> copy(parameters = parameters.map { it.specialization(typeVars) },returnType = returnType.specialization(typeVars))
+    is NullableTypeAST -> copy(type = type.specialization(typeVars))
+    is TupleTypeAST    -> copy(arguments = arguments.map { it.specialization(typeVars) })
+}
+@JvmName("s2")
+fun TypeAST.specialization(typeVars : Map<TypeVarTag,TypeAST>) : TypeAST = when(this){
     is ApplyTypeAST    -> copy(arguments = arguments.map { it.specialization(typeVars) })
     is CommonTypeAST   -> takeUnless { it.name in typeVars.keys.map { it.name } } ?: typeVars.toList().find { (k,_) -> k.name == name }!!.second
     is FunctionTypeAST -> copy(parameters = parameters.map { it.specialization(typeVars) },returnType = returnType.specialization(typeVars))
@@ -191,15 +202,44 @@ val ClassTag.asType : TypeAST
         )
     }
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
-infix fun TypeAST.isCastableTo(type : TypeAST) : Boolean = when {
+infix fun TypeAST.isCastableTo(type : TypeAST) : Boolean = try {
     //如果接收者是参数本身,可以转换
-    this % type                                            -> true
-    //如果接收者是可空类型且接收者的非空版本可以转换为参数,可以转换
-    this is NullableTypeAST && this.type isCastableTo type -> true
+    (this % type) ||
+    //如果参数是可空类型,且接收者可以转换为参数的非空版本,可以转换
+    (type is NullableTypeAST && this isCastableTo type.type) ||
     //如果参数是接收者的父类,可以转换
-    type in definition!!.parents                           -> true
-    //其他情况不可以转换 TODO 添加形变
-    else                                                   -> false
+    (definition!!.parents.any { it % type }) ||
+    //如果参数是最高父类Any,可以转换
+    (type is CommonTypeAST && this !is NullableTypeAST && type.name == any) ||
+    //如果接收者是最低子类Nothing,可以转换
+    (this is CommonTypeAST && name == nothing) ||
+    //两个都是可空类型
+    (this is NullableTypeAST && type is NullableTypeAST &&
+            this.type isCastableTo type.type) ||
+    //两个都是元组类型
+    (this is TupleTypeAST && type is TupleTypeAST &&
+            arguments.size == type.arguments.size &&
+            arguments.zip(type.arguments).all { (a,b) -> a isCastableTo b }) ||
+    //两个都是函数类型
+    (this is FunctionTypeAST && type is FunctionTypeAST &&
+            parameters.size == type.parameters.size &&
+            parameters.zip(type.parameters).all { (a,b) -> b isCastableTo a } &&
+            returnType isCastableTo type.returnType) ||
+    //两个都是泛型类型
+    (this is ApplyTypeAST && type is ApplyTypeAST &&
+            name == type.name &&
+            arguments.size == type.arguments.size &&
+            (arguments zip type.arguments zip definition!!.typeParameters).all { (a,b,c) ->
+                when {
+                    c.isCovariant     -> a isCastableTo b
+                    c.isContravariant -> b isCastableTo a
+                    else              -> a % b
+                }
+            }) ||
+    //上述均不符合,对接收者的父类再判断
+    (definition!!.parents.any { it isCastableTo type })
+} catch(err : NullPointerException) {
+    throw NullPointerException(toString())
 }
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 @Suppress("NOTHING_TO_INLINE")

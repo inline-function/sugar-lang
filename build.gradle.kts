@@ -38,6 +38,7 @@ dependencies {
     //implementation("org.ow2.asm:asm:9.5")
     //implementation("org.ow2.asm:asm-util:9.5")
     implementation("com.squareup:kotlinpoet:2.2.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 }
 
 tasks.test {

@@ -30,6 +30,8 @@ operator fun Int.times(s: String) =
             append(s)
         }
     }
+infix fun <E,R,T> List<Pair<E,T>>.zip(list : List<R>) : List<Triple<E,T,R>> =
+    mapIndexed { index,(e,t) -> Triple(e,t,list[index]) }
 /**
  * 抛出异常
  * @param message 异常信息

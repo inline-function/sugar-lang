@@ -52,7 +52,7 @@ inline fun VariableTree.transform(top : Boolean = false,isParameter : Boolean = 
     if(!isParameter && value == null && returnType == null)
         info += NoVariableTypeAndValueException(file,line,column,name)
     //如果变量声明有值,检查值的类型是否可以转换为变量类型
-    if(value != null && returnType != null && !value.type.isCastableTo(returnType))
+    if(value != null && returnType != null && value.type isNotCastableTo returnType)
         info += CannotCastToTypeException(file,line,column,value.type,returnType)
     //构建变量树
     return VariableAST(
@@ -440,23 +440,21 @@ fun InvokeTree.transform() : InvokeAST?{
     }
     //判断函数的参数是否匹配
     invokeFunction.parameters.forEachIndexed { index,it ->
+        //类型变量
+        val typeVars = symbols.parents
+            .flatMap { it }
+            .filterIsInstance<TypeVarTag>() +
+                ((invoker.type as? FunctionTypeAST)?.typeParameters?.map { TypeVarTag(it) } ?: emptyList())
         //实参类型
         val arg = arguments.getOrNull(index)?.type
+            ?.specialization(typeVars.associateWith { it.bound ?: Any })
         //形参类型
-        val param = run {
-            val param = it.returnType!!
-            val typeVars = symbols.parents
-                .flatMap { it }
-                .filterIsInstance<TypeVarTag>() +
-                    ((invoker.type as? FunctionTypeAST)?.typeParameters?.map { TypeVarTag(it) } ?: emptyList())
-            if(param is CommonTypeAST && param.name in typeVars.map { it.name })
-                typeVars.find { it.name == param.name }!!.bound ?: Any
-            else param
-        }
+        val param = it.returnType!!
+            .specialization(typeVars.associateWith { it.bound ?: Any })
         arg?.apply {
             //实参不能转换为形参
             if(arg isNotCastableTo param)
-                info += ArgumentTypeException(file,arg.line,arg.column,arg,param)
+                info += ArgumentTypeException(file,invoker.line,invoker.column,arg,param)
         } ?: run {
             //没有实参
             info += ArgumentTypeException(file,line,column,null,param)
@@ -472,7 +470,7 @@ fun InvokeTree.transform() : InvokeAST?{
             arg?.apply {
                 //实参不能转换为形参
                 if(arg isNotCastableTo param)
-                    info += ArgumentTypeException(file, arg.line, arg.column, arg, param, true)
+                    info += ArgumentTypeException(file, invoker.line, invoker.column, arg, param, true)
             } ?: run {
                 //没有实参
                 info += ArgumentTypeException(file,line,column,null,param,true)

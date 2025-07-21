@@ -9,6 +9,7 @@ const val dec = "Dec"
 const val int = "Int"
 const val str = "Str"
 const val any = "Any"
+const val nothing = "Nothing"
 val InnerTree.Unit
     get() = CommonTypeAST(
         line = line,
