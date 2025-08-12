@@ -5,139 +5,197 @@ package compiler.kotlin
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import compiler.semantic.*
-import org.jetbrains.kotlin.utils.addToStdlib.assertedCast
+import tools.Box
 import tools.SideEffect
+import tools.never
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.collections.forEach
-
-context(nameMap : NameMap)
+typealias LineIndex = Box<Int>
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex)
 fun ClassAST.check() = when(name) {
     int,dec,str,unit,function -> null
     else if Regex("Function\\d+").matches(name) -> null
     else -> this
 }
-context(nameMap : NameMap)
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex)
 fun FunctionAST.check() = when {
     annotations.any { it.name == "jvm_name" } -> null
     else -> this
 }
-context(nameMap : NameMap)
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex)
 fun VariableAST.check() : VariableAST? = this
 
 @SideEffect("io")
-fun ProjectAST.generateKotlinProject(path : String) = with(nameMap) nameMap@{
-    this@nameMap.forEach { (ast,name) ->
-        this@nameMap[ast] = name
-            .takeUnless { ast.annotations.any { it.name == "jvm_name" } }
-            ?: when(val argument = ast.annotations.find { it.name == "jvm_name" }!!.arguments){
-                is StringConstantAST if argument.value.split(":").size == 1 -> argument.value
-                is StringConstantAST -> argument.value.split(":").let { "${it[0]}.${it[1]}" }
-                else -> TODO()
-            }
-    }
-    val src = "$path/src"
-    files.forEach { file ->
-        FileOutputStream(File("$src/${file.name}.kts").also(File::createNewFile)).use { stream ->
-            file.tops.forEach {
-                it.toKotlinCode()
-                    .toByteArray()
-                    .takeUnless { it.isEmpty() }
-                    ?.let(stream::write)
-            }
-        }
-    }
-}
-context(nameMap : NameMap)
-fun ClassAST.toKotlinCode() = TypeSpec
-    .interfaceBuilder(id)
-    .let {
-        members.fold(it) { acc, member ->
-            when (member) {
-                is FunctionAST -> acc.addFunction(member.toKotlinCode())
-                is VariableAST -> acc.addProperty(member.toKotlinCode())
-            }
-        }
-    }
-    .build()
-context(nameMap : NameMap)
-fun FunctionAST.toKotlinCode() = FunSpec
-    .builder(id)
-    .let { builder ->
-        parameters.fold(builder) { acc,it ->
-            acc.addParameter(
-                ParameterSpec(
-                    name = it.name,
-                    type = it.returnType.toKotlinCode(),
+fun ProjectAST.generateKotlinProject(path : String) = with(map) nameMap@{
+    with(SymbolTable<Pair<FileAST,TopAST>>()) symbols@ {
+        with(false){
+            with(LineIndex(1)){
+                this@symbols.addAll(
+                    this@generateKotlinProject.files
+                        .associateWith { it.tops }
+                        .flatMap { (file,tops) -> tops.map { file to it } }
                 )
-            )
+                val src = "$path/src"
+                files.forEach { file ->
+                    with(file) {
+                        FileOutputStream(File("$src/${file.name}.kts").also(File::createNewFile)).use { stream ->
+                            file.tops.forEach {
+                                it.toKotlinCode()
+                                    .toByteArray()
+                                    .takeUnless { it.isEmpty() }
+                                    ?.let(stream::write)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    this
+}
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex)
+fun ClassAST.toKotlinCode() = TypeSpec
+    .interfaceBuilder((file to this).mapName)
+    .let {
+        with(SymbolTable(parent = symbols)) symbols@{
+            this@symbols.addAll(members.map { file to it })
+            members.fold(it) { acc,member ->
+                with(false){
+                    when(member) {
+                        is FunctionAST -> acc.addFunction(member.toKotlinCode())
+                        is VariableAST -> acc.addProperty(member.toKotlinCode())
+                    }.let {
+                        if(member.annotations.any { it.name == "over" })
+                            acc.addModifiers(KModifier.OVERRIDE)
+                        else it
+                    }
+                }
+            }
         }
     }.let {
-        typeParameters.fold(it) { it,ast ->
-            it.addTypeVariable(ast.toKotlinCode())
+        typeParameters.fold(it) { acc,par ->
+            acc.addTypeVariable(par.toKotlinCode())
         }
     }
-    .addCode(body?.stmts?.dropLast(1)?.joinToString("\n") { it.toKotlinCode() } ?: "")
-    .let {
-        body?.stmts
-            ?.lastOrNull()
-            ?.run {
-                it.addStatement(
-                    "${if(returnType is CommonTypeAST && returnType.name == unit)
-                        "\n"
-                    else
-                        "\nreturn "
-                    }${toKotlinCode()}"
-                )
-            } ?: it
-    }
-    .returns(returnType.toKotlinCode())
     .build()
-context(nameMap : NameMap)
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,isLocal : Boolean,lineIndex : LineIndex)
+fun FunctionAST.toKotlinCode() = run {
+    if(isLocal) symbols += file to this
+    with(SymbolTable(parent = symbols)) symbols@{
+        FunSpec
+            .builder((file to this@toKotlinCode).mapName)
+            .let { builder ->
+                parameters.fold(builder) { acc,it ->
+                    acc.addParameter(
+                        ParameterSpec(
+                            name = it.name,
+                            type = it.returnType.toKotlinCode(),
+                        )
+                    )
+                }
+            }
+            .let {
+                typeParameters.fold(it) { it,ast ->
+                    it.addTypeVariable(ast.toKotlinCode())
+                }
+            }
+            .also { addAll(parameters.map { file to it }) }
+            .let { Indexer(it,lineIndex.value) }
+            .apply {
+                body?.stmts
+                    ?.dropLast(1)
+                    ?.forEach { it.mapToKotlin() }
+                body?.stmts
+                    ?.lastOrNull()
+                    ?.let { it.mapToKotlin(isReturn = true) }
+            }
+            .builder
+            .returns(returnType.toKotlinCode())
+            .build()
+    }
+}
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex)
 fun TypeVariableAST.toKotlinCode() = TypeVariableName(
     name = name,
     bounds = listOf(bound.toKotlinCode())
 )
-context(nameMap : NameMap)
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,isLocal : Boolean,lineIndex : LineIndex,indexer : Indexer)
 fun VariableAST.toKotlinCode() = PropertySpec
     .builder(
-        name = id,
+        name = (file to this).mapName,
         type = returnType.toKotlinCode(),
     )
     .initializer(value?.toKotlinCode()?.let { CodeBlock.of(it) })
     .mutable(annotations.any { it.name == "mut" })
     .build()
-context(nameMap : NameMap)
+    .also { if(isLocal) symbols += file to this }
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex)
 fun TypeAST.toKotlinCode() : TypeName = when(this) {
-    is ApplyTypeAST    -> ClassName("",name.cid)
+    is ApplyTypeAST     -> ClassName("",definition!!.mapName)
         .parameterizedBy(arguments.map { it.toKotlinCode() })
-    is CommonTypeAST   -> ClassName("",name.cid)
-    is FunctionTypeAST -> LambdaTypeName.get(
+    is CommonTypeAST    -> ClassName("",definition!!.mapName)
+    is FunctionTypeAST  -> LambdaTypeName.get(
         receiver   = null,
         parameters = parameters.map { it.toKotlinCode() }.toTypedArray(),
         returnType = returnType.toKotlinCode(),
     )
-    is NullableTypeAST -> type.toKotlinCode().copy(nullable = true)
-    is TupleTypeAST    -> ClassName("","Tuple${arguments.size}")
+    is NullableTypeAST  -> type.toKotlinCode().copy(nullable = true)
+    is TupleTypeAST     -> ClassName("","Tuple${arguments.size}")
+    is IntersectionType -> never
 }
-context(nameMap : NameMap)
-fun StatementAST.toKotlinCode() : String = when(this) {
-    is ExpressionAST -> toKotlinCode()
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,isLocal : Boolean,lineIndex : LineIndex,indexer : Indexer)
+fun StatementAST.mapToKotlin(isReturn : Boolean = false) = when(this) {
+    is ExpressionAST -> mapToKotlin(false)
     is TopAST        -> toKotlinCode()
 }
-context(nameMap : NameMap)
-fun ExpressionAST.toKotlinCode() : String = when(this) {
-    is LambdaAST if parameters.isEmpty() -> "{\n${body.stmts.joinToString("\n") { it.toKotlinCode() }}\n}"
-    is NameAST   if expression != null   -> "${expression.toKotlinCode()}.${name.fvid}"
-    is DecimalConstantAST -> value
-    is IntegerConstantAST -> value
-    is StringConstantAST  -> "\"$value\""
-    is InvokeAST          -> "(${invoker.toKotlinCode()}(${arguments.joinToString(",") { it.toKotlinCode() }}))"
-    is LambdaAST          -> "{${parameters.joinToString(",") { "${it.name} : ${it.returnType.toKotlinCode()}" }} -> \n${body.stmts.joinToString("\n") { it.toKotlinCode() }}\n}"
-    is NameAST            -> name.fvid
-    is AssignAST          -> "${name.toKotlinCode()} = ${value.toKotlinCode()}"
-}.toString()
-context(nameMap : NameMap)
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex,indexer : Indexer)
+fun ExpressionAST.mapToKotlin(valuable : Boolean = true,isReturn : Boolean = false) = when(this) {
+    is AnonymousObjectAST if parents.isEmpty() -> "object {${members.joinToString("\n") { (if(it.annotations.any { it.name == "over" }) "override " else "") + with(false){ it.toKotlinCode() } }}}"
+    is DecimalConstantAST -> indexer.add(lineIndex.value,"$value")
+    is IntegerConstantAST -> indexer.add(lineIndex.value,"$value")
+    is StringConstantAST  -> indexer.add(lineIndex.value,"\"$value\"")
+    is InvokeAST          -> mapToKotlin(isReturn)
+    is LambdaAST          -> mapToKotlin(isReturn)
+    is NameAST            -> mapToKotlin(isReturn)
+    is AssignAST          -> mapToKotlin(isReturn)
+    is AnonymousObjectAST -> "object : ${parents.joinToString(",") { it.toKotlinCode().toString() }} {\n${members.joinToString("\n") { (if(it.annotations.any { it.name == "over" }) "override " else "") + with(false){ it.toKotlinCode() } }}\n}"
+}
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex,indexer : Indexer)
+fun InvokeAST.mapToKotlin(isReturn : Boolean = false) {
+    val `return` = if(isReturn) "return " else ""
+    indexer.add(lineIndex.value,"(${invoker.mapToKotlin()}(${arguments.joinToString(",") { it.mapToKotlin() }}))")
+}
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex,indexer : Indexer)
+fun LambdaAST.mapToKotlin(isReturn : Boolean = false) {
+    val `return` = if(isReturn) "return " else ""
+    if(parameters.isEmpty())
+        indexer
+            .begin(lineIndex.value,`return`)
+            .apply { with(true) { body.stmts.forEach { it.mapToKotlin(false) } } }
+            .end(lineIndex.value)
+    else
+        indexer
+            .begin(lineIndex.value,`return`)
+            .add(lineIndex.value,parameters.joinToString(",") { "${it.name} : ${it.returnType.toKotlinCode()}" } + " ->")
+            .apply { with(true) { body.stmts.forEach { it.mapToKotlin(false) } } }
+            .end(lineIndex.value)
+}
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex,indexer : Indexer)
+fun AssignAST.mapToKotlin(isReturn : Boolean = false) {
+    val `return` = if(isReturn) "return " else ""
+    indexer.add(lineIndex.value,"$`return`${name.mapToKotlin()} = ${value.mapToKotlin()}")
+}
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,lineIndex : LineIndex,indexer : Indexer)
+fun NameAST.mapToKotlin(isReturn : Boolean = false) {
+    val `return` = if(isReturn) "return " else ""
+    val main = if(expression != null)
+        "${expression.mapToKotlin()}.${expression.type.definition!!.let { (file,ast) -> (file to ast.members.first { it.name == name }).mapName }}"
+    else
+        symbols.parents.flatMap { it }.filter { it.second !is ClassAST }.first { it.second.name == name }.mapName
+    indexer.add(lineIndex.value,"$`return`$main")
+}
+context(nameMap : SourceMap,tree : ProjectAST,file : FileAST,symbols : SymbolTable<Pair<FileAST,TopAST>>,isLocal : Boolean)
 fun TopAST.toKotlinCode() : String = when(this) {
     is FunctionAST     -> check()?.toKotlinCode()
     is VariableAST     -> check()?.toKotlinCode()

@@ -2,9 +2,17 @@
 
 package compiler.semantic
 
-import compiler.semantic.Any
-import tools.zip
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+import tools.*
+
+context(symbols : SymbolTable<Tag>)
+val ClassTag.allParents : List<ClassTag>
+    get() = parents
+        .map { it.definition!! }
+        .let { it + it.flatMap { it.allParents } }
+context(symbols : SymbolTable<Tag>)
+infix fun CallableTag.overrideIn(def : ClassTag) : Boolean = def.allParents
+    .any { this in it.members }
+context(symbols : SymbolTable<Tag>)
 val CommonTypeAST.definition : ClassTag?
     get() = symbols.parents
         .flatMap { it.symbols }
@@ -15,7 +23,7 @@ val CommonTypeAST.definition : ClassTag?
             .find { it is TypeVarTag && it.name == name }
             .let { (it as? TypeVarTag)?.bound as? ClassTag }
 
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(symbols : SymbolTable<Tag>)
 val TupleTypeAST.definition : ClassTag?
     get() = symbols.parents
         .flatMap { it.symbols }
@@ -29,7 +37,7 @@ val TupleTypeAST.definition : ClassTag?
             }
         }
 
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(symbols : SymbolTable<Tag>)
 val FunctionTypeAST.definition : ClassTag?
     get() = symbols.parents
         .flatMap { it.symbols }
@@ -43,11 +51,11 @@ val FunctionTypeAST.definition : ClassTag?
             }
         }
 
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(symbols : SymbolTable<Tag>)
 val NullableTypeAST.definition : ClassTag?
     get() = type.definition
 
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(symbols : SymbolTable<Tag>)
 val ApplyTypeAST.definition : ClassTag?
     get() = symbols.parents
         .flatMap { it.symbols }
@@ -60,31 +68,45 @@ val ApplyTypeAST.definition : ClassTag?
                 override val members : List<CallableTag> = it.members.map { it.specialization(typeVars) }
             }
         }
-context(info : MutableInformation,symbols : SymbolTable<Tag>)
+context(symbols : SymbolTable<Tag>)
 val TypeAST.definition : ClassTag?
     get() = when(this){
-        is ApplyTypeAST    -> definition
-        is CommonTypeAST   -> definition
-        is FunctionTypeAST -> definition
-        is NullableTypeAST -> definition
-        is TupleTypeAST    -> definition
+        is ApplyTypeAST     -> definition
+        is CommonTypeAST    -> definition
+        is FunctionTypeAST  -> definition
+        is NullableTypeAST  -> definition
+        is TupleTypeAST     -> definition
+        is IntersectionType -> object : ClassTag {
+            override val name : ID
+                get() = never
+            override val annotations : List<AnnotationAST>
+                get() = annotations
+            override val typeParameters : List<TypeVariableAST>
+                get() = emptyList()
+            override val parents : List<TypeAST>
+                get() = types
+            override val members : List<CallableTag>
+                get() = types.flatMap { it.definition!!.members }
+        }
     }
 //TODO:支持高阶类型
 @JvmName("s1")
 fun TypeAST.specialization(typeVars : Map<TypeVariableAST,TypeAST>) : TypeAST = when(this){
-    is ApplyTypeAST    -> copy(arguments = arguments.map { it.specialization(typeVars) })
-    is CommonTypeAST   -> takeUnless { it.name in typeVars.keys.map { it.name } } ?: typeVars.toList().find { (k,_) -> k.name == name }!!.second
-    is FunctionTypeAST -> copy(parameters = parameters.map { it.specialization(typeVars) },returnType = returnType.specialization(typeVars))
-    is NullableTypeAST -> copy(type = type.specialization(typeVars))
-    is TupleTypeAST    -> copy(arguments = arguments.map { it.specialization(typeVars) })
+    is ApplyTypeAST     -> copy(arguments = arguments.map { it.specialization(typeVars) })
+    is CommonTypeAST    -> takeUnless { it.name in typeVars.keys.map { it.name } } ?: typeVars.toList().find { (k,_) -> k.name == name }!!.second
+    is FunctionTypeAST  -> copy(parameters = parameters.map { it.specialization(typeVars) },returnType = returnType.specialization(typeVars))
+    is NullableTypeAST  -> copy(type = type.specialization(typeVars))
+    is TupleTypeAST     -> copy(arguments = arguments.map { it.specialization(typeVars) })
+    is IntersectionType -> copy(types = types.map { it.specialization(typeVars) })
 }
 @JvmName("s2")
 fun TypeAST.specialization(typeVars : Map<TypeVarTag,TypeAST>) : TypeAST = when(this){
-    is ApplyTypeAST    -> copy(arguments = arguments.map { it.specialization(typeVars) })
-    is CommonTypeAST   -> takeUnless { it.name in typeVars.keys.map { it.name } } ?: typeVars.toList().find { (k,_) -> k.name == name }!!.second
-    is FunctionTypeAST -> copy(parameters = parameters.map { it.specialization(typeVars) },returnType = returnType.specialization(typeVars))
-    is NullableTypeAST -> copy(type = type.specialization(typeVars))
-    is TupleTypeAST    -> copy(arguments = arguments.map { it.specialization(typeVars) })
+    is ApplyTypeAST     -> copy(arguments = arguments.map { it.specialization(typeVars) })
+    is CommonTypeAST    -> takeUnless { it.name in typeVars.keys.map { it.name } } ?: typeVars.toList().find { (k,_) -> k.name == name }!!.second
+    is FunctionTypeAST  -> copy(parameters = parameters.map { it.specialization(typeVars) },returnType = returnType.specialization(typeVars))
+    is NullableTypeAST  -> copy(type = type.specialization(typeVars))
+    is TupleTypeAST     -> copy(arguments = arguments.map { it.specialization(typeVars) })
+    is IntersectionType -> copy(types = types.map { it.specialization(typeVars) })
 }
 fun CallableTag.specialization(typeVars : Map<TypeVariableAST,TypeAST>) : CallableTag = when(this){
     is FunctionTag -> typeVars
@@ -116,6 +138,14 @@ T = Str  =>  T : Str
 Out<T> = Out<Str>  =>  T : Str
 In<T> = In<Str>  =>  Str : T
 Mut<T> = Mut<Str>  =>  T = Str
+
+设未知类型T
+列方程组:{
+    T <: Any
+    List<Str> <: List<T>
+}
+因为List的E是协变的,因此
+Str <: T <: Any
  */
 context(info : MutableInformation,symbols : SymbolTable<Tag>)
 fun FunctionTag.solve(types : List<TypeAST?>) : FunctionTag {

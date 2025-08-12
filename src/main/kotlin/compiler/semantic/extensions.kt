@@ -6,6 +6,7 @@ infix operator fun TypeAST?.rem(type : InnerAST?) : Boolean = when(this){
     is FunctionTypeAST?   -> this % type
     is NullableTypeAST?   -> this % type
     is TupleTypeAST?      -> this % type
+    is IntersectionType   -> this % type
 }
 infix operator fun AnnotationAST?.rem(type : InnerAST?) : Boolean =
     this == null && type == null ||
@@ -51,7 +52,12 @@ infix operator fun NullableTypeAST?.rem(type : InnerAST?) : Boolean =
     type is NullableTypeAST &&
     this is NullableTypeAST &&
     type.type % type.type
-
+infix operator fun IntersectionType?.rem(type : InnerAST?) : Boolean =
+    this == null && type == null ||
+    type is IntersectionType &&
+    this is IntersectionType &&
+    types.size == type.types.size &&
+    (types zip type.types).all { (p1,p2) -> p1 % p2 }
 infix operator fun ClassAST?.rem(ast: InnerAST?) : Boolean =
     this == null && ast == null ||
             ast is ClassAST &&
@@ -173,3 +179,245 @@ infix operator fun DecimalConstantAST?.rem(ast: InnerAST?) : Boolean =
             this is DecimalConstantAST &&
             ast.value == value &&
             ast.type % type
+fun ProjectAST.visit(body : (AST)->Unit) {
+    files.forEach(body)
+    files.forEach { it.visit(body) }
+}
+fun FileAST.visit(body : (AST)->Unit) {
+    tops.forEach(body)
+    tops.forEach { it.visit(body) }
+}
+fun TopAST.visit(body : (AST)->Unit) {
+    body(this)
+    when(this){
+        is FunctionAST     -> visit(body)
+        is VariableAST     -> visit(body)
+        is ClassAST        -> visit(body)
+        is TypeVariableAST -> visit(body)
+    }
+}
+fun FunctionAST.visit(body : (AST)->Unit) {
+    body(returnType)
+    typeParameters.forEach(body)
+    parameters.forEach(body)
+    parameters.forEach(body)
+    aboveContext.forEach(body)
+    belowContext.forEach(body)
+    annotations.forEach(body)
+    this.body?.let { body(it) }
+    typeParameters.forEach { it.visit(body) }
+    parameters.forEach { it.visit(body) }
+    aboveContext.forEach { it.visit(body) }
+    belowContext.forEach { it.visit(body) }
+    annotations.forEach { it.visit(body) }
+    this.body?.visit(body)
+}
+fun BodyAST.visit(body : (AST)->Unit) {
+    stmts.forEach(body)
+    stmts.forEach { it.visit(body) }
+}
+fun StatementAST.visit(body : (AST)->Unit) {
+    body(this)
+    when(this){
+        is LambdaAST          -> visit(body)
+        is InvokeAST          -> visit(body)
+        is AssignAST          -> visit(body)
+        is StringConstantAST  -> visit(body)
+        is IntegerConstantAST -> visit(body)
+        is AnonymousObjectAST -> visit(body)
+        is DecimalConstantAST -> visit(body)
+        is NameAST            -> visit(body)
+        is FunctionAST        -> visit(body)
+        is VariableAST        -> visit(body)
+        is ClassAST           -> visit(body)
+        is TypeVariableAST    -> visit(body)
+    }
+}
+fun VariableAST.visit(body : (AST)->Unit) {
+    body(returnType)
+    receiver?.let { body(it) }
+    getter?.let { body(it) }
+    setter?.let { body(it) }
+    value?.let { body(it) }
+    aboveContext.forEach(body)
+    belowContext.forEach(body)
+    annotations.forEach(body)
+    
+    receiver?.visit(body)
+    getter?.visit(body)
+    setter?.visit(body)
+    value?.visit(body)
+    aboveContext.forEach { it.visit(body) }
+    belowContext.forEach { it.visit(body) }
+    annotations.forEach { it.visit(body) }
+}
+
+fun ClassAST.visit(body : (AST)->Unit) {
+    typeParameters.forEach(body)
+    parents.forEach(body)
+    members.forEach(body)
+    annotations.forEach(body)
+    
+    typeParameters.forEach { it.visit(body) }
+    parents.forEach { it.visit(body) }
+    members.forEach { it.visit(body) }
+    annotations.forEach { it.visit(body) }
+}
+
+fun TypeVariableAST.visit(body : (AST)->Unit) {
+    body(bound)
+    annotations.forEach(body)
+    
+    bound.visit(body)
+    annotations.forEach { it.visit(body) }
+}
+
+fun NameAST.visit(body : (AST)->Unit) {
+    expression?.let { body(it) }
+    body(type)
+    
+    expression?.visit(body)
+    type.visit(body)
+}
+
+fun ScopeAST.visit(body : (AST)->Unit) {
+    stmts.forEach(body)
+    stmts.forEach { it.visit(body) }
+}
+
+fun LambdaAST.visit(body : (AST)->Unit) {
+    parameters.forEach(body)
+    body(this.body)
+    body(returnType)
+    body(type)
+    
+    parameters.forEach { it.visit(body) }
+    this.body.visit(body)
+    returnType.visit(body)
+    type.visit(body)
+}
+
+fun AnnotationAST.visit(body : (AST)->Unit) {
+    arguments?.let { body(it) }
+    arguments?.visit(body)
+}
+
+fun InvokeAST.visit(body : (AST)->Unit) {
+    body(invoker)
+    arguments.forEach(body)
+    typeArguments.forEach(body)
+    body(type)
+    
+    invoker.visit(body)
+    arguments.forEach { it.visit(body) }
+    typeArguments.forEach { it.visit(body) }
+    type.visit(body)
+}
+
+fun AnonymousObjectAST.visit(body : (AST)->Unit) {
+    parents.forEach(body)
+    members.forEach(body)
+    body(type)
+    
+    parents.forEach { it.visit(body) }
+    members.forEach { it.visit(body) }
+    type.visit(body)
+}
+
+fun TypeAST.visit(body : (AST)->Unit) {
+    body(this)
+    when(this) {
+        is CommonTypeAST -> visit(body)
+        is NullableTypeAST -> visit(body)
+        is TupleTypeAST -> visit(body)
+        is FunctionTypeAST -> visit(body)
+        is ApplyTypeAST -> visit(body)
+        is IntersectionType -> visit(body)
+    }
+}
+
+fun CommonTypeAST.visit(body : (AST)->Unit) {
+    annotations.forEach(body)
+    annotations.forEach { it.visit(body) }
+}
+
+fun NullableTypeAST.visit(body : (AST)->Unit) {
+    body(type)
+    annotations.forEach(body)
+    
+    type.visit(body)
+    annotations.forEach { it.visit(body) }
+}
+
+fun TupleTypeAST.visit(body : (AST)->Unit) {
+    arguments.forEach(body)
+    annotations.forEach(body)
+    
+    arguments.forEach { it.visit(body) }
+    annotations.forEach { it.visit(body) }
+}
+
+fun FunctionTypeAST.visit(body : (AST)->Unit) {
+    parameters.forEach(body)
+    body(returnType)
+    annotations.forEach(body)
+    typeParameters.forEach(body)
+    
+    parameters.forEach { it.visit(body) }
+    returnType.visit(body)
+    annotations.forEach { it.visit(body) }
+    typeParameters.forEach { it.visit(body) }
+}
+
+fun ApplyTypeAST.visit(body : (AST)->Unit) {
+    arguments.forEach(body)
+    annotations.forEach(body)
+    
+    arguments.forEach { it.visit(body) }
+    annotations.forEach { it.visit(body) }
+}
+
+fun IntersectionType.visit(body : (AST)->Unit) {
+    types.forEach(body)
+    annotations.forEach(body)
+    
+    types.forEach { it.visit(body) }
+    annotations.forEach { it.visit(body) }
+}
+
+fun ExpressionAST.visit(body : (AST)->Unit) {
+    body(this)
+    when(this) {
+        is NameAST -> visit(body)
+        is LambdaAST -> visit(body)
+        is InvokeAST -> visit(body)
+        is AssignAST -> visit(body)
+        is AnonymousObjectAST -> visit(body)
+        is StringConstantAST -> visit(body)
+        is IntegerConstantAST -> visit(body)
+        is DecimalConstantAST -> visit(body)
+    }
+}
+
+fun AssignAST.visit(body : (AST)->Unit) {
+    body(name)
+    body(value)
+    
+    name.visit(body)
+    value.visit(body)
+}
+
+fun StringConstantAST.visit(body : (AST)->Unit) {
+    body(type)
+    type.visit(body)
+}
+
+fun IntegerConstantAST.visit(body : (AST)->Unit) {
+    body(type)
+    type.visit(body)
+}
+
+fun DecimalConstantAST.visit(body : (AST)->Unit) {
+    body(type)
+    type.visit(body)
+}

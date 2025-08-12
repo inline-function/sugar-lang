@@ -9,6 +9,7 @@
 package compiler.semantic
 
 import compiler.parser.*
+import compiler.parser.AnonymousObjectTree
 import compiler.parser.AssignTree
 import tools.context
 import tools.ID
@@ -291,6 +292,7 @@ fun ExpressionTree.transform(need : FunctionTypeTree? = null) : ExpressionAST? =
     is LambdaTree          -> transform(need)
     is NameTree            -> transform()
     is AssignTree          -> transform()
+    is AnonymousObjectTree -> transform()
 }
 context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun ExpressionTree.transform(need : FunctionTypeAST?) : ExpressionAST? = when(this){
@@ -301,7 +303,21 @@ fun ExpressionTree.transform(need : FunctionTypeAST?) : ExpressionAST? = when(th
     is LambdaTree          -> transform(need)
     is NameTree            -> transform()
     is AssignTree          -> transform()
+    is AnonymousObjectTree -> transform()
 }
+context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
+fun AnonymousObjectTree.transform() = AnonymousObjectAST(
+    line = line,
+    column = column,
+    parents = parents.map { it.transform() },
+    members = members.map { it.transform() },
+    type = IntersectionType(
+        annotations = emptyList(),
+        line = line,
+        column = column,
+        types = parents.map { it.transform() }
+    )
+)
 context(info : MutableInformation,symbols : SymbolTable<Tag>,file : ID)
 fun AssignTree.transform() : AssignAST? {
     if(name !is NameTree) {
@@ -453,8 +469,9 @@ fun InvokeTree.transform() : InvokeAST?{
             .specialization(typeVars.associateWith { it.bound ?: Any })
         arg?.apply {
             //实参不能转换为形参
-            if(arg isNotCastableTo param)
+            if(arg isNotCastableTo param) {
                 info += ArgumentTypeException(file,invoker.line,invoker.column,arg,param)
+            }
         } ?: run {
             //没有实参
             info += ArgumentTypeException(file,line,column,null,param)
@@ -469,11 +486,14 @@ fun InvokeTree.transform() : InvokeAST?{
             val param = it.bound
             arg?.apply {
                 //实参不能转换为形参
-                if(arg isNotCastableTo param)
-                    info += ArgumentTypeException(file, invoker.line, invoker.column, arg, param, true)
+                if(arg isNotCastableTo param) {
+                    info += ArgumentTypeException(file,invoker.line,invoker.column,arg,param,true)
+                    return@transform null
+                }
             } ?: run {
                 //没有实参
                 info += ArgumentTypeException(file,line,column,null,param,true)
+                return@transform null
             }
         }
     //构造调用树

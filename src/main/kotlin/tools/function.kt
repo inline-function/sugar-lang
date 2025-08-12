@@ -38,8 +38,17 @@ infix fun <E,R,T> List<Pair<E,T>>.zip(list : List<R>) : List<Triple<E,T,R>> =
  */
 @Suppress("NOTHING_TO_INLINE")
 @SideEffect
-inline fun exception(message: String) : Nothing =
-    throw Exception(message)
+inline fun exception(message: Any?) : Nothing =
+    throw Exception(message?.toString() ?: "message is null")
+//俘获一个空指针异常
+inline fun <R> ifThrowNPE(crossinline body : ()->R) : ((NullPointerException)->R)->R = {
+    try {
+        body()
+    } catch (e : NullPointerException) {
+        it(e)
+    }
+}
+infix fun <R> (((NullPointerException)->R)->R).then(then : (NullPointerException)->R) : R = this(then)
 fun <A,R> context(a : A,block : context(A) (A)->R) : R = with(a) { block(a) }
 fun <A,B,R> context(a : A,b : B,block : context(A,B) (A,B)->R) : R = with(a) { with(b) { block(a,b) } }
 fun <A,B,C,R> context(a : A,b : B,c : C,block : context(A,B,C) (A,B,C)->R) : R = with(a) { with(b) { with(c) { block(a,b,c) } } }

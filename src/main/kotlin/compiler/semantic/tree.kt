@@ -7,6 +7,8 @@
 package compiler.semantic
 
 import compiler.parser.AnnotationTree
+import compiler.parser.CallableTree
+import compiler.parser.ExpressionTree
 import compiler.parser.TopTree
 import compiler.parser.TypeTree
 import tools.ID
@@ -114,6 +116,14 @@ data class AssignAST(
         get() = value.type
 }
 
+data class AnonymousObjectAST(
+    override val line: Int,
+    override val column: Int,
+    val parents: List<TypeAST>,
+    val members: List<CallableAST>,
+    override val type : TypeAST
+) : ExpressionAST
+
 data class StringConstantAST(
     override val line: Int,
     override val column: Int,
@@ -182,3 +192,10 @@ data class ApplyTypeAST(
 ) : TypeAST {
     override fun toString() = "$name<${arguments.joinToString(",")}>"
 }
+
+data class IntersectionType(
+    override val annotations : List<AnnotationAST>,
+    override val line : Int,
+    override val column : Int,
+    val types : List<TypeAST>
+) : TypeAST

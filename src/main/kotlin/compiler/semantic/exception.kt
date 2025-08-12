@@ -57,7 +57,7 @@ data class CannotFoundException(
     override val column : Int,
     val name : ID,
 ) : Inner,Error {
-    override fun toString() = "${prefix}找不到`$name`}"
+    override fun toString() = "${prefix}找不到`$name`"
 }
 
 data class DuplicateMemberException(

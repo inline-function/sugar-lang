@@ -46,6 +46,9 @@ fun main() = 1 time {
                 ).toSugarTree(fileName = "core").files
             )
         }
+        .apply {
+            println("语义分析前的具体语法树 : $this")
+        }
         .transform(/* annotations,apts */)
         .apply {
             println("语义分析后的抽象语法树 : $first\n语义分析信息:\n$second\n生成kotlin项目至 : $path")

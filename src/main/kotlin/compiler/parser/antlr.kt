@@ -218,9 +218,42 @@ fun BodyContext.toSugarTree() = ScopeTree(
     column = column,
     stmts = stmt().map { it.expr()?.toSugarTree() ?: it.top()!!.toSugarTree() }
 )
+fun LambdaContext.toSugarTree() = LambdaTree(
+    line = line,
+    column = column,
+    parameters = if(parameter().isNotEmpty())
+        parameter().map { it.toSugarTree() }
+    else ID().map {
+        VariableTree(
+            line = line,
+            column = column,
+            name = it.text,
+            returnType = null,
+            annotations = emptyList(),
+            aboveContext = emptyList(),
+            belowContext = emptyList(),
+            receiver = null,
+            getter = null,
+            setter = null,
+            value = null
+        )
+    },
+    body = ScopeTree(
+        line = line,
+        column = column,
+        stmts = stmt().map { it.expr()?.toSugarTree() ?: it.top()!!.toSugarTree() }
+    )
+)
 fun ExprContext.toSugarTree() : ExpressionTree = (
     expr()?.toSugarTree() ?:
-    number()?.run {
+    anonymousObject()?.run {
+        AnonymousObjectTree(
+            line = line,
+            column = column,
+            parents = type().map { it.toSugarTree() },
+            members = variable().map { it.toSugarTree() } + function().map { it.toSugarTree() }
+        )
+    } ?: number()?.run {
         INT()?.text?.toInt()?.let {
             IntegerConstantTree(
                 line = line,
@@ -245,51 +278,46 @@ fun ExprContext.toSugarTree() : ExpressionTree = (
             expression = null,
             name = text
         )
-    } ?: lambda()!!.run {
-        LambdaTree(
-            line = line,
-            column = column,
-            parameters = if(parameter().isNotEmpty())
-                parameter().map { it.toSugarTree() }
-            else ID().map {
-                VariableTree(
-                    line = line,
-                    column = column,
-                    name = it.text,
-                    returnType = null,
-                    annotations = emptyList(),
-                    aboveContext = emptyList(),
-                    belowContext = emptyList(),
-                    receiver = null,
-                    getter = null,
-                    setter = null,
-                    value = null
-                )
-            },
-            body = ScopeTree(
-                line = line,
-                column = column,
-                stmts = stmt().map { it.expr()?.toSugarTree() ?: it.top()!!.toSugarTree() }
-            )
-        )
-    }
+    } ?: lambda()!!.toSugarTree()
 ).let {
-    invoke()?.run {
-        InvokeTree(
-            line = line,
-            column = column,
-            invoker = it,
-            arguments = expr().map { it.toSugarTree() },
-            typeArguments = typeArgList()?.type()?.map { it.toSugarTree() } ?: emptyList()
-        )
-    } ?: it
-}.let {
     name()?.run {
         NameTree(
             line = line,
             column = column,
             expression = it,
             name = ID().text,
+        )
+    } ?: it
+}.let {
+    invoke()?.run {
+        InvokeTree(
+            line = line,
+            column = column,
+            invoker = it,
+            arguments = expr()
+                .map { it.toSugarTree() }
+                .let {
+                    if(lambda() != null)
+                        it + lambda()!!.toSugarTree()
+                    else
+                        it
+                },
+            typeArguments = typeArgList()?.type()?.map { it.toSugarTree() } ?: emptyList()
+        )
+    } ?: it
+}.let {
+    infix()?.run {
+        InvokeTree(
+            line = line,
+            column = column,
+            invoker = NameTree(
+                line = line,
+                column = column,
+                expression = null,
+                name = ID().text
+            ),
+            arguments = listOf(it,expr().toSugarTree()),
+            typeArguments = emptyList()
         )
     } ?: it
 }.let {

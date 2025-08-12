@@ -1,8 +1,23 @@
+class Any
+class Nothing
 class Unit
 @jvm_name("String")
 class Str
 @jvm_name("Double")
 class Dec
+class Bool {
+    fun invoke(true : ()=>Unit,false : ()=>Unit)
+}
+var true : Bool = object : Bool {
+    over fun invoke(true : ()=>Unit,false : ()=>Unit) {
+        true()
+    }
+}
+var false : Bool = object : Bool {
+    over fun invoke(true : ()=>Unit,false : ()=>Unit) {
+        false()
+    }
+}
 class Int {
     fun add(arg : Int) : Int
 }
@@ -63,3 +78,11 @@ class Function17<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R> : Functio
 }
 @jvm_name("println")
 fun print(text : Str)
+fun if(condition : Bool,onTrue : ()=>Unit) : (()=>Unit)=>Unit {
+    { it =>
+        condition(onTrue,it)
+    }
+}
+fun else(onTrue : (()=>Unit)=>Unit,onFalse : ()=>Unit) {
+    onTrue(onFalse)
+}

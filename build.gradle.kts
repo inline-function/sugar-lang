@@ -57,7 +57,8 @@ tasks.withType<KotlinCompile>().configureEach {
             "-Xcontext-parameters",
             "-Xnon-local-break-continue",
             "-Xwhen-guards",
-            "-Xmulti-dollar-interpolation"
+            "-Xmulti-dollar-interpolation",
+            "-Xnested-type-aliases"
         )
     }
 }

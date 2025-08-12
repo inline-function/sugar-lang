@@ -58,6 +58,13 @@ data class AssignTree(
     val value: ExpressionTree,
 ) : ExpressionTree
 
+data class AnonymousObjectTree(
+    override val line: Int,
+    override val column: Int,
+    val parents: List<TypeTree>,
+    val members: List<CallableTree>,
+) : ExpressionTree
+
 data class FunctionTree(
     override val line: Int,
     override val returnType: TypeTree?,
