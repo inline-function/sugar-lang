@@ -8,7 +8,6 @@ package tools
 
 import kotlin.annotation.AnnotationRetention.SOURCE
 import kotlin.annotation.AnnotationTarget.*
-import kotlin.reflect.KClass
 
 /**
  * 该注解警示该函数具有副作用
@@ -16,5 +15,20 @@ import kotlin.reflect.KClass
 @Retention(SOURCE)
 @Target(FUNCTION,PROPERTY_GETTER,PROPERTY_SETTER)
 annotation class SideEffect(
-    val about : String = ""
-)
+    val about : Type
+) {
+    enum class Type {
+        //函数会对文件进行读写
+        IO,
+        //函数会打印信息
+        PRINT,
+        //函数会改变外部变量
+        CHANGE
+    }
+}
+/**
+ * 该注解警示该参数将会被污染
+ */
+@Retention(SOURCE)
+@Target(VALUE_PARAMETER)
+annotation class Pollutant

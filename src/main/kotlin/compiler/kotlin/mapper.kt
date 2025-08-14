@@ -2,6 +2,7 @@
 
 package compiler.kotlin
 
+import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FunSpec
 import compiler.semantic.ClassAST
 import compiler.semantic.FunctionAST
@@ -26,7 +27,7 @@ val ProjectAST.map : SourceMap
         nameMap = buildList {
             files.forEach { file ->
                 file.visit {
-                    val type = when(it){
+                    val type = when(it) {
                         is ClassAST    -> CLASS
                         is VariableAST -> VARIABLE
                         is FunctionAST -> FUNCTION
@@ -34,7 +35,7 @@ val ProjectAST.map : SourceMap
                     }
                     type?.also { _ ->
                         val it = it as TopAST
-                        this += Name(
+                        this += file to Name(
                             tagType = type,
                             name = it.name,
                             line = it.line,
@@ -44,43 +45,59 @@ val ProjectAST.map : SourceMap
                     }
                 }
             }
-        }
-        .associateWith { it.name }
-        .toMap()
-        .toMutableMap()
+        }.associate { (left,right) ->
+            right to (left.name to right.name)
+        }.toMutableMap(),
+        fileMap = files
+            .associate { it.name to it.name }
+            .toMutableMap()
     )
 //本源地图
 data class SourceMap(
     val tree : ProjectAST,
-    val nameMap : MutableMap<Name,ID>,
-) : MutableMap<Name,ID> by nameMap
+    val nameMap : MutableMap<Name,Pair<ID,ID>>,
+    val fileMap : MutableMap<ID,ID>,
+) : MutableMap<Name,Pair<ID,ID>> by nameMap
 //结果本源地图
 data class ResultSourceMap(
     val tree : ProjectAST,
-    val nameMap : Map<Name,Name>,
-    val lineMap : Map<Int,Int>,
+    val nameMap : Map<Name,Pair<ID,Name>>,
+    val lineMap : Map<Pair<ID,Int>,Pair<ID,Int>>,
+    val fileMap : Map<ID,ID>,
+)
+fun SourceMap.result(
+    nameMap : Map<Name,Pair<ID,Name>>,
+    lineMap : Map<Pair<ID,Int>,Pair<ID,Int>>,
+    fileMap : Map<ID,ID>
+) = ResultSourceMap(
+    tree = tree,
+    nameMap = nameMap,
+    lineMap = lineMap,
+    fileMap = fileMap,
 )
 //索引器
 data class Indexer(
-    var builder : FunSpec.Builder,
     var index : Int,
+    var codeBlock : CodeBlock.Builder = CodeBlock.builder(),
     val map : MutableMap<Int,Int> = mutableMapOf(),
 )
-fun Indexer.begin(line : Int,code : String,vararg args : Any) = apply {
-    builder = builder.beginControlFlow(code,*args)
-    index++
+fun Indexer.begin(line : Int,code : Any,vararg args : Any) = apply {
+    codeBlock = codeBlock.beginControlFlow(code.toString(),*args)
+    index += 1
     map[line] = index
 }
 fun Indexer.end(line : Int) = apply {
-    builder.endControlFlow()
-    index++
+    codeBlock.endControlFlow()
+    index += 1
     map[line] = index
 }
-fun Indexer.add(line : Int,code : String,vararg args : Any) = apply {
-    builder = builder.addStatement(code,*args)
-    index++
+fun Indexer.add(line : Int,code : Any,vararg args : Any) = apply {
+    codeBlock = codeBlock.addStatement(code.toString(),*args)
+    index += code.toString().lines().size
     map[line] = index
 }
+val Indexer.result : CodeBlock
+    get() = codeBlock.build()
 //名字
 data class Name(
     val tagType : NameType,
@@ -138,7 +155,7 @@ val Pair<FileAST,ClassAST>.theName : Name
     }
 context(nameMap : SourceMap,symbols : SymbolTable<Pair<FileAST,TopAST>>)
 val Pair<FileAST,TopAST>.mapName : ID
-    get() = nameMap[theName] ?: exception(theName)
+    get() = nameMap[theName]?.second ?: exception(theName)
 //context(nameMap : SourceMap,symbols : SymbolTable<Pair<FileAST,TopAST>>)
 //val TopAST.mapName : ID
 //    get() = symbols.parents
